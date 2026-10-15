@@ -36,6 +36,10 @@ yarn-error.log*
 # Testing
 coverage/
 .nyc_output/
+test-results/
+playwright-report/
+blob-report/
+apps/web/e2e/screenshots/
 
 # Temporary files
 *.tmp

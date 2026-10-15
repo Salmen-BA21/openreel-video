@@ -396,6 +396,9 @@ importers:
       '@eslint/js':
         specifier: ^9.39.2
         version: 9.39.2
+      '@playwright/test':
+        specifier: 1.60.0
+        version: 1.60.0
       '@testing-library/jest-dom':
         specifier: ^6.4.6
         version: 6.9.1

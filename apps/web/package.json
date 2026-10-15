@@ -11,6 +11,7 @@
     "deploy:preview": "wrangler pages deploy dist --project-name=openreel --branch=preview",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:e2e": "playwright test",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist node_modules/.vite && find src -name '*.js' -o -name '*.js.map' -o -name '*.d.ts' -o -name '*.d.ts.map' | xargs rm -f 2>/dev/null || true"
@@ -43,6 +44,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
+    "@playwright/test": "1.60.0",
     "@testing-library/jest-dom": "^6.4.6",
     "@testing-library/react": "^16.0.0",
     "@types/react": "^19.2.17",

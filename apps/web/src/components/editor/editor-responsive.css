@@ -1,39 +1,868 @@
+/* ============================================================
+   OpenReel editor — responsive layout stylesheet
+   ------------------------------------------------------------
+   Tiers are decided once in `useEditorLayout()` and mirrored onto
+   the editor root as `data-editor-layout`:
+       phone    < 640px     preview + timeline + tool dock,
+                            panels as bottom sheets
+       compact  640–1099px  same stack, panels as side drawers
+       desktop  ≥ 1100px    resizable multi-column workspace
+   CSS is scoped with attribute selectors instead of media queries
+   so JS and CSS can never disagree about the layout.
+   Tokens only (src/index.css) — light and dark both keep working.
+   ============================================================ */
+
+/* ---------- shared ---------- */
 .editor-shell [hidden] { display: none !important; }
-.editor-compact { height: 100dvh; padding-bottom: env(safe-area-inset-bottom, 0px); }
-.editor-compact .editor-body { flex-direction: column; }
-.editor-compact .editor-workspace { padding: 4px; gap: 4px; }
-.editor-compact .editor-panel,
-.editor-compact .editor-stage { border-radius: 8px; }
-.editor-compact button { min-height: 44px; }
-.editor-compact button { min-width: 44px; }
-.editor-compact input[type="range"] { min-height: 44px; }
-.editor-compact .editor-rail { flex-shrink: 0; overflow-x: auto; }
-.editor-compact .editor-rail > nav { width: 100%; height: 48px; flex-direction: row; padding: 2px 4px; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border); }
-.editor-compact .editor-rail > nav > .h-px { display: none; }
-.editor-workspace-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); flex-shrink: 0; border-top: 1px solid var(--border); background: var(--bg-1); padding: 4px; gap: 4px; }
-.editor-workspace-tabs button { min-height: 48px; border-radius: 8px; font-size: 13px; font-weight: 600; }
-.editor-compact [data-tour="preview"] > .border-t > .h-12 { height: 48px; padding: 0 4px; gap: 4px; overflow-x: auto; overflow-y: hidden; }
-.editor-compact [data-tour="preview"] > .border-t > .h-12 > * { flex-shrink: 0; }
-.editor-compact [data-tour="preview"] > .flex-1 { padding: 4px; }
-.editor-compact [data-tour="timeline"] > .h-12 { gap: 8px; padding: 0 4px; overflow-x: auto; overflow-y: hidden; }
-.editor-compact [data-tour="timeline"] > .h-12 > * { flex-shrink: 0; }
-.editor-compact [data-timeline-clip] { touch-action: pan-x pan-y; }
-.editor-compact [data-timeline-ruler] { height: 44px; }
-.editor-compact [data-timeline-track-header] { padding: 0 4px; gap: 2px; }
-.editor-compact [data-timeline-height-resize] { display: none; }
-.editor-compact [data-timeline-clip][aria-pressed="true"] { overflow: visible; }
-.editor-compact [data-timeline-trim] { width: 44px; min-height: 44px; touch-action: none; background: transparent !important; }
-.editor-compact [data-timeline-trim="left"] { transform: translateX(-22px); box-shadow: inset 3px 0 0 #4ade80; }
-.editor-compact [data-timeline-trim="right"] { transform: translateX(22px); box-shadow: inset -3px 0 0 #4ade80; }
-.editor-compact [data-timeline-clip]:not([aria-pressed="true"]) [data-timeline-trim],
-.editor-compact [data-timeline-clip][data-locked="true"] [data-timeline-trim] { pointer-events: none; }
-.editor-touch-move { display: none; }
-.editor-compact .editor-touch-move { display: grid; position: absolute; left: 50%; top: 0; transform: translateX(-50%); height: 44px; width: 44px; z-index: 25; place-items: center; border-radius: 6px; background: rgba(0, 0, 0, .5); color: white; touch-action: none; }
-@media (max-height: 500px) {
-  .editor-compact .editor-workspace { grid-template-rows: minmax(120px, 42%) minmax(0, 1fr) !important; }
-  .editor-compact [data-tour="preview"] > .shrink-0 { display: none; }
+
+.editor-shell {
+  --editor-topbar-h: 60px;
+  --sheet-h: 64dvh;
+  height: 100dvh;
 }
 
-@media (max-width: 1100px), (pointer: coarse) {
-  [role="menuitem"], [role="menuitemcheckbox"], [role="menuitemradio"] { min-height: 44px; }
+/* Sheet detents (phone) — height tracks the viewport via dvh. */
+.editor-shell[data-sheet-detent="0"] { --sheet-h: 46dvh; }
+.editor-shell[data-sheet-detent="1"] { --sheet-h: 68dvh; }
+.editor-shell[data-sheet-detent="2"] { --sheet-h: 92dvh; }
+
+.editor-topbar { height: var(--editor-topbar-h); }
+
+/* Sheet chrome exists in the DOM at all tiers (so panel components never
+   remount and lose state) but is inert on desktop. */
+.panel-sheet-head { display: none; }
+.sheet-backdrop { display: none; }
+
+/* ---------- header (phone + compact) ---------- */
+[data-editor-layout="phone"] { --editor-topbar-h: calc(48px + env(safe-area-inset-top, 0px)); }
+[data-editor-layout="compact"] { --editor-topbar-h: 56px; }
+
+[data-editor-layout="phone"] .editor-topbar,
+[data-editor-layout="compact"] .editor-topbar {
+  padding-top: env(safe-area-inset-top, 0px);
+  gap: 4px;
+  padding-inline: 6px;
+}
+[data-editor-layout="phone"] .editor-topbar { padding-inline: 6px; }
+
+/* Home button + overflow menu stand in for the desktop action rail. */
+.topbar-compact-only { display: none; }
+[data-editor-layout="phone"] .topbar-compact-only,
+[data-editor-layout="compact"] .topbar-compact-only { display: flex; }
+
+/* ---------- workspace grid (phone + compact) ---------- */
+[data-editor-layout="phone"] .editor-workspace,
+[data-editor-layout="compact"] .editor-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(132px, 1fr) var(--tl-height);
+  grid-template-areas: "stage" "timeline";
+  gap: 0;
+  padding: 0;
+}
+
+[data-editor-layout="phone"] .editor-workspace { --tl-height: clamp(178px, 34dvh, 320px); }
+[data-editor-layout="compact"] .editor-workspace { --tl-height: clamp(200px, 38dvh, 420px); }
+
+/* Timeline-first "maximize" mode on stacked layouts. */
+[data-editor-layout="phone"][data-timeline-maximized="true"] .editor-workspace {
+  grid-template-rows: minmax(88px, auto) minmax(0, 1fr);
+}
+[data-editor-layout="compact"][data-timeline-maximized="true"] .editor-workspace {
+  grid-template-rows: minmax(120px, auto) minmax(0, 1fr);
+}
+
+/* Action rail is replaced by the tool dock + header overflow menu. */
+[data-editor-layout="phone"] .editor-rail,
+[data-editor-layout="compact"] .editor-rail { display: none; }
+
+/* ---------- stage ---------- */
+[data-editor-layout="phone"] .editor-stage {
+  border-radius: 0;
+  border: 0;
+  box-shadow: none;
+}
+[data-editor-layout="compact"] .editor-stage {
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+/* ---------- timeline panel ---------- */
+[data-editor-layout="phone"] #editor-panel-timeline {
+  border-radius: 0;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  box-shadow: none;
+}
+[data-editor-layout="compact"] #editor-panel-timeline {
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+/* ---------- bottom sheets (phone) ---------- */
+[data-editor-layout="phone"] #editor-panel-media,
+[data-editor-layout="phone"] #editor-panel-inspector,
+[data-editor-layout="phone"] #editor-panel-chat,
+[data-editor-layout="phone"] .timeline-audio-mixer,
+[data-editor-layout="phone"] .timeline-keyframe-panel {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: auto;
+  height: var(--sheet-h);
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 16px 16px 0 0;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  animation: editor-sheet-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+[data-editor-layout="phone"] .sheet-backdrop {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  background: rgb(0 0 0 / 0.45);
+  animation: editor-sheet-fade 180ms ease-out;
+}
+
+@keyframes editor-sheet-in {
+  from { transform: translateY(16px); opacity: 0.6; }
+  to { transform: translateY(0); opacity: 1; }
+}
+@keyframes editor-sheet-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ---------- side drawers (compact / tablet) ---------- */
+[data-editor-layout="compact"] #editor-panel-media,
+[data-editor-layout="compact"] #editor-panel-inspector,
+[data-editor-layout="compact"] #editor-panel-chat,
+[data-editor-layout="compact"] .timeline-audio-mixer,
+[data-editor-layout="compact"] .timeline-keyframe-panel {
+  position: fixed;
+  top: var(--editor-topbar-h);
+  right: 0;
+  bottom: 0;
+  left: auto;
+  width: min(420px, calc(100vw - 64px));
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-1);
+  border: 0;
+  border-left: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  animation: editor-drawer-in 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes editor-drawer-in {
+  from { transform: translateX(24px); opacity: 0.5; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* ---------- sheet header ---------- */
+[data-editor-layout="phone"] .panel-sheet-head,
+[data-editor-layout="compact"] .panel-sheet-head {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+}
+
+/* The whole head is a drag surface on phones (swipe down to dismiss). */
+[data-editor-layout="phone"] .panel-sheet-head {
+  touch-action: none;
+  cursor: grab;
+  user-select: none;
+}
+[data-editor-layout="phone"] .panel-sheet-head:active { cursor: grabbing; }
+
+/* Sheet panels stack: chrome on top, content fills the rest. */
+[data-editor-layout="phone"] :is(#editor-panel-media, #editor-panel-inspector, #editor-panel-chat) > *:not(.panel-sheet-head),
+[data-editor-layout="compact"] :is(#editor-panel-media, #editor-panel-inspector, #editor-panel-chat) > *:not(.panel-sheet-head) {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+[data-editor-layout="phone"] .sheet-grabber {
+  display: block;
+  touch-action: none;
+  cursor: grab;
+  padding: 8px 0 2px;
+}
+[data-editor-layout="phone"] .sheet-grabber::before {
+  content: "";
+  display: block;
+  width: 40px;
+  height: 4px;
+  margin: 0 auto;
+  border-radius: 99px;
+  background: var(--border-strong);
+}
+[data-editor-layout="compact"] .sheet-grabber { display: none; }
+
+.sheet-head-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 6px 14px;
+}
+.sheet-title {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sheet-close {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  color: var(--fg-3);
+  background: transparent;
+  border: 0;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.sheet-close:hover { background: var(--hover); color: var(--fg); }
+.sheet-close:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sheet-close:active { background: var(--bg-3); }
+
+/* ---------- bottom tool dock ---------- */
+.editor-tool-dock {
+  display: flex;
+  flex-shrink: 0;
+  align-items: stretch;
+  gap: 2px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  background: var(--bg-1);
+  border-top: 1px solid var(--border);
+  padding: 6px 8px;
+  padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  z-index: 40;
+}
+.editor-tool-dock::-webkit-scrollbar { display: none; }
+
+.dock-item {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 64px;
+  min-height: 50px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--fg-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  transition: background-color 140ms ease, color 140ms ease, transform 100ms ease;
+}
+.dock-item:hover { background: var(--hover); color: var(--fg-2); }
+.dock-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.dock-item:active { transform: scale(0.96); }
+.dock-item[aria-pressed="true"] { background: var(--selected); color: var(--accent); }
+.dock-item[data-prominent="true"] { color: var(--accent); }
+.dock-item[data-prominent="true"]:hover { background: var(--accent-soft); color: var(--accent); }
+.dock-item[data-prominent="true"] .dock-dot {
+  position: absolute;
+  top: 6px;
+  right: 12px;
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--accent);
+}
+.dock-item { position: relative; }
+
+/* ---------- context bar above the dock ---------- */
+.compact-context-bar {
+  display: none;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--fg-2);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-editor-layout="phone"] .compact-context-bar,
+[data-editor-layout="compact"] .compact-context-bar { display: flex; }
+.compact-context-bar:hover { background: var(--bg-3); }
+.compact-context-bar:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.compact-context-bar .context-cta { margin-left: auto; color: var(--accent); flex-shrink: 0; }
+
+/* ---------- preview (phone + compact) ---------- */
+[data-editor-layout="phone"] .preview-player-bar,
+[data-editor-layout="compact"] .preview-player-bar { display: none; }
+
+[data-editor-layout="phone"] .preview-video-area { padding: 6px; }
+[data-editor-layout="compact"] .preview-video-area { padding: 12px; }
+
+.preview-controls { position: relative; }
+/* Undo/redo + the overflow trigger only join the transport row on stacked
+   layouts — desktop keeps them in the action rail / visible cluster. */
+.preview-undo-group, .preview-more { display: none; }
+
+[data-editor-layout="phone"] .preview-controls,
+[data-editor-layout="compact"] .preview-controls {
+  height: auto;
+  min-height: 52px;
+  padding-inline: 8px;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+/* The phone transport keeps thumb-zone width for timecode + transport:
+   undo/redo already live in the always-visible timeline toolbar. */
+[data-editor-layout="phone"] .preview-transport { gap: 8px; }
+
+/* Primary transport: full 44pt touch targets on stacked layouts. */
+[data-editor-layout="phone"] .preview-play,
+[data-editor-layout="compact"] .preview-play,
+[data-editor-layout="phone"] .preview-skip,
+[data-editor-layout="compact"] .preview-skip {
+  width: 44px;
+  height: 44px;
+}
+
+[data-editor-layout="compact"] .preview-undo-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+[data-editor-layout="phone"] .preview-more,
+[data-editor-layout="compact"] .preview-more {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--fg-3);
+  transition: background-color 140ms ease, color 140ms ease;
+}
+[data-editor-layout="phone"] .preview-undo,
+[data-editor-layout="compact"] .preview-undo {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--fg-3);
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.preview-undo:hover, .preview-more:hover { background: var(--hover); color: var(--fg); }
+.preview-undo:focus-visible, .preview-more:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.preview-undo:disabled { opacity: 0.4; cursor: not-allowed; }
+.preview-undo:active, .preview-more:active { background: var(--bg-3); }
+
+.preview-timecode {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 2px;
+}
+
+/* Secondary transport controls collapse into a "more" popover. */
+.preview-secondary { display: flex; }
+
+[data-editor-layout="phone"] .preview-secondary,
+[data-editor-layout="compact"] .preview-secondary { display: none; }
+
+[data-editor-layout="phone"] .preview-controls[data-overflow="open"] .preview-secondary,
+[data-editor-layout="compact"] .preview-controls[data-overflow="open"] .preview-secondary {
+  display: flex;
+  position: absolute;
+  right: 8px;
+  bottom: calc(100% + 8px);
+  width: min(320px, calc(100vw - 16px));
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 6px;
+  padding: 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+  z-index: 60;
+}
+
+/* Phone: stacked timecode reads current-over-total (reference image). */
+[data-editor-layout="phone"] .preview-timecode {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  line-height: 1.15;
+}
+
+/* Touch-sized scrub bar with a permanently visible thumb. */
+.preview-scrub { touch-action: none; }
+[data-editor-layout="phone"] .preview-scrub,
+[data-editor-layout="compact"] .preview-scrub { height: 12px; }
+[data-editor-layout="phone"] .preview-scrub .preview-scrub-thumb,
+[data-editor-layout="compact"] .preview-scrub .preview-scrub-thumb {
+  opacity: 1;
+  transform: translateY(-50%) scale(1);
+}
+
+/* ---------- timeline toolbar ---------- */
+.tl-toolbar { position: relative; }
+.tl-more { display: none; }
+
+/* Desktop: the two groups are one continuous row (flex-1 keeps the zoom
+   cluster pinned to the right, exactly as before the split). */
+.tl-tools-primary,
+.tl-tools-overflow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+.tl-tools-primary { flex: 0 1 auto; }
+.tl-tools-overflow { flex: 1 1 auto; }
+
+[data-editor-layout="phone"] .tl-toolbar,
+[data-editor-layout="compact"] .tl-toolbar {
+  gap: 6px;
+  padding-inline: 6px;
+  overflow: visible;
+}
+[data-editor-layout="phone"] .tl-tools-primary,
+[data-editor-layout="compact"] .tl-tools-primary {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: visible;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+[data-editor-layout="phone"] .tl-tools-primary::-webkit-scrollbar { display: none; }
+
+[data-editor-layout="phone"] .tl-tools-overflow,
+[data-editor-layout="compact"] .tl-tools-overflow { display: none; }
+
+[data-editor-layout="phone"] [data-tl-more="open"] .tl-tools-overflow,
+[data-editor-layout="compact"] [data-tl-more="open"] .tl-tools-overflow {
+  display: flex;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 6px;
+  flex: none;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  justify-content: flex-start;
+  gap: 4px 8px;
+  width: min(340px, calc(100vw - 12px));
+  padding: 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-lg);
+  z-index: 80;
+}
+/* Inside the open panel every group may wrap and nothing auto-pushes
+   right — keeps snap / track-size / maximize tools reachable on phones
+   instead of running past the panel edge. */
+[data-editor-layout="phone"] [data-tl-more="open"] .tl-tools-overflow > div,
+[data-editor-layout="compact"] [data-tl-more="open"] .tl-tools-overflow > div {
+  margin-left: 0;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+}
+/* Dividers only make sense in one continuous row — inside the wrapping
+   panel they'd dangle at line ends. */
+[data-editor-layout="phone"] [data-tl-more="open"] .tl-tools-overflow > div.w-px,
+[data-editor-layout="compact"] [data-tl-more="open"] .tl-tools-overflow > div.w-px {
+  display: none;
+}
+
+[data-editor-layout="phone"] .tl-more,
+[data-editor-layout="compact"] .tl-more {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--fg-3);
+}
+[data-editor-layout="phone"] .tl-more:hover,
+[data-editor-layout="compact"] .tl-more:hover { background: var(--hover); color: var(--fg); }
+[data-editor-layout="phone"] .tl-more:focus-visible,
+[data-editor-layout="compact"] .tl-more:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+[data-editor-layout="phone"] .tl-more[aria-expanded="true"],
+[data-editor-layout="compact"] .tl-more[aria-expanded="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Touch targets for timeline tools — never squeeze below 44pt: the
+   group scrolls horizontally instead of shrinking its buttons. */
+.tl-tool { width: 28px; height: 28px; }
+[data-editor-layout="phone"] .tl-tool,
+[data-editor-layout="compact"] .tl-tool {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+}
+.tl-tool:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: 8px; }
+
+/* ---------- timeline multi-select bar (entered by long-press on touch) ---------- */
+.tl-multiselect {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  min-height: 40px;
+  padding: 4px 8px;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+.tl-multiselect-count {
+  flex-shrink: 0;
+  padding-inline: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-2);
+}
+.tl-multiselect-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.tl-multiselect-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-1);
+  color: var(--fg-2);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tl-multiselect-action:hover:not(:disabled) { background: var(--hover); color: var(--fg); }
+.tl-multiselect-action:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tl-multiselect-action:disabled { opacity: 0.4; cursor: not-allowed; }
+.tl-multiselect-done {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+.tl-multiselect-done:hover {
+  background: var(--accent);
+  color: var(--accent-fg);
+  filter: brightness(1.08);
+}
+[data-editor-layout="phone"] .tl-multiselect-action,
+[data-editor-layout="compact"] .tl-multiselect-action {
+  min-height: 44px;
+  padding-inline: 14px;
+}
+
+/* ---------- track rail ---------- */
+[data-editor-layout="phone"] [data-timeline-track-header] {
+  padding-inline: 6px;
+  gap: 4px;
+}
+
+/* ---------- assets panel: vertical rail → horizontal strip ---------- */
+[data-editor-layout="phone"] .assets-shell { flex-direction: column; }
+[data-editor-layout="phone"] .assets-rail {
+  flex-direction: row;
+  align-items: center;
+  width: auto;
+  height: auto;
+  padding: 6px 8px;
+  gap: 4px;
+  border-right: 0;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+[data-editor-layout="phone"] .assets-rail::-webkit-scrollbar { display: none; }
+[data-editor-layout="phone"] .assets-rail .assets-tab {
+  flex-direction: row;
+  width: auto;
+  min-width: 60px;
+  height: 40px;
+  flex-shrink: 0;
+  gap: 6px;
+  padding: 0 10px;
+  border-radius: 99px;
+  font-size: 12px;
+}
+[data-editor-layout="phone"] .assets-rail .assets-tab span {
+  max-width: none;
+  line-height: 1;
+}
+
+/* ---------- audio mixer + keyframe panel open/close affordance ---------- */
+.timeline-audio-mixer, .timeline-keyframe-panel { min-height: 0; }
+[data-editor-layout="phone"] .timeline-keyframe-panel { overflow-y: auto; }
+/* The dark mixer console fills its sheet instead of leaving a white band
+   under it when the empty state is short. */
+[data-editor-layout="phone"] .timeline-audio-mixer > div,
+[data-editor-layout="compact"] .timeline-audio-mixer > div {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* ---------- actions inside overflow panels keep their size ---------- */
+[data-editor-layout="phone"] [role="menuitem"],
+[data-editor-layout="phone"] [role="menuitemcheckbox"],
+[data-editor-layout="phone"] [role="menuitemradio"],
+[data-editor-layout="compact"] [role="menuitem"],
+[data-editor-layout="compact"] [role="menuitemcheckbox"],
+[data-editor-layout="compact"] [role="menuitemradio"] {
+  min-height: 44px;
+}
+
+/* ---------- timeline touch gestures ---------- */
+.editor-compact [data-timeline-clip] { touch-action: pan-x pan-y; }
+.editor-compact [data-timeline-clip] {
+  /* Long-press enters multi-select instead of showing the iOS callout /
+     selecting the clip's label text. */
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+.editor-compact [data-timeline-ruler] { height: 44px; }
+.editor-compact [data-timeline-height-resize] { display: none; }
+.editor-compact [data-timeline-clip][aria-pressed="true"] { overflow: visible; }
+.editor-compact [data-timeline-trim] {
+  width: 44px;
+  min-height: 44px;
+  touch-action: none;
+  background: transparent !important;
+}
+.editor-compact [data-timeline-trim="left"] {
+  transform: translateX(-22px);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.editor-compact [data-timeline-trim="right"] {
+  transform: translateX(22px);
+  box-shadow: inset -3px 0 0 var(--accent);
+}
+.editor-compact [data-timeline-clip]:not([aria-pressed="true"]) [data-timeline-trim],
+.editor-compact [data-timeline-clip][data-locked="true"] [data-timeline-trim] {
+  pointer-events: none;
+}
+.editor-touch-move { display: none; }
+.editor-compact .editor-touch-move {
+  display: grid;
+  position: absolute;
+  left: 50%;
+  top: 0;
+  transform: translateX(-50%);
+  height: 44px;
+  width: 44px;
+  z-index: 25;
+  place-items: center;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 0.5);
+  color: #fff;
+  touch-action: none;
+}
+
+/* ---------- export dialog ----------
+   The dialog is portaled outside the editor shell, so ExportDialog stamps the
+   tier on the dialog surface itself — same single source of truth, no media
+   queries. Desktop keeps the existing two-column layout untouched.
+   The tier attribute therefore lives ON `.export-dialog`, so rules that target
+   the surface itself must use `.export-dialog[tier]` (not `[tier] .export-dialog`,
+   which would require a matching ancestor that never exists inside the portal). */
+
+/* The dialog surface is a CSS grid, so its content child defaults to
+   `min-width: auto` and sizes to its min-content. Without this the phone preset
+   strip (a horizontal scroller) forces the whole surface past the viewport
+   instead of scrolling inside it. */
+.export-dialog > * { min-width: 0; }
+
+/* The open animation animates `transform`, which drops the base
+   `-translate-x/y-1/2` centering mid-flight, so the surface briefly flies past
+   the right edge during the 150ms fade/zoom. Seed the enter-translate with the
+   same -50% so it scales in place. The attribute selector outranks the
+   `.animate-in` utility (which sets the same custom properties to `initial`). */
+.export-dialog[data-editor-layout] {
+  --tw-enter-translate-x: -50%;
+  --tw-enter-translate-y: -50%;
+}
+
+/* Every control inside the dialog is a 44pt target on the stacked layouts. */
+.export-dialog[data-editor-layout="phone"] button,
+.export-dialog[data-editor-layout="compact"] button {
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* Mode tabs fill the row (ExportDialog shortens the "Custom Settings"
+   label at the phone tier so nothing ellipsizes). */
+[data-editor-layout="phone"] .export-mode-tabs {
+  width: 100%;
+  max-width: none;
+}
+
+/* Quick export: info over a full-width action. */
+[data-editor-layout="phone"] .export-quick-card {
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+/* Presets: the side rail becomes a horizontal picker above the grid. */
+[data-editor-layout="phone"] .export-presets { flex-direction: column; }
+[data-editor-layout="phone"] .export-browse {
+  width: auto;
+  flex: 0 0 auto;
+  border-right: 0;
+  border-bottom: 1px solid var(--border);
+  padding: 8px 12px 10px;
+}
+[data-editor-layout="phone"] .export-browse-list {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 6px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+[data-editor-layout="phone"] .export-browse-list::-webkit-scrollbar { display: none; }
+[data-editor-layout="phone"] .export-browse-list > * {
+  width: auto;
+  flex: 0 0 auto;
+  min-height: 44px;
+  margin-bottom: 0;
+  white-space: nowrap;
+}
+[data-editor-layout="phone"] .export-browse-divider { display: none; }
+
+/* Preset grid: one comfortable column. */
+[data-editor-layout="phone"] .export-main { padding: 14px; }
+[data-editor-layout="phone"] .export-main-head {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+[data-editor-layout="phone"] .export-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Custom settings: one field per row, audio cells stacked, and the
+   desktop-only encode-mode block collapses with its grid. */
+[data-editor-layout="phone"] .export-field-grid,
+[data-editor-layout="phone"] .export-audio-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+[data-editor-layout="phone"] .export-field-grid > .col-span-2 {
+  grid-column: auto;
+}
+/* Target-size chips keep two readable columns. */
+[data-editor-layout="phone"] .export-size-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* Device strip wraps instead of pushing the estimate off the edge. */
+[data-editor-layout="phone"] .export-device-strip > div {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+
+/* Footer: capped so the actions can never be pushed out of reach on very
+   short screens; stats wrap above a full-width action pair. */
+[data-editor-layout="phone"] .export-footer {
+  max-height: 46dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+[data-editor-layout="phone"] .export-footer-actions {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+[data-editor-layout="phone"] .export-footer-actions > div:last-child > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* ---------- short viewports (phone landscape, small windows) ---------- */
+@media (max-height: 520px) {
+  [data-editor-layout="phone"] { --editor-topbar-h: calc(44px + env(safe-area-inset-top, 0px)); }
+  [data-editor-layout="phone"] .editor-workspace {
+    grid-template-rows: minmax(96px, 1fr) minmax(150px, var(--tl-height));
+  }
+  [data-editor-layout="phone"] .dock-item { min-height: 44px; }
+}
+
+/* ---------- reduced motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  [data-editor-layout="phone"] #editor-panel-media,
+  [data-editor-layout="phone"] #editor-panel-inspector,
+  [data-editor-layout="phone"] #editor-panel-chat,
+  [data-editor-layout="phone"] .timeline-audio-mixer,
+  [data-editor-layout="phone"] .timeline-keyframe-panel,
+  [data-editor-layout="compact"] #editor-panel-media,
+  [data-editor-layout="compact"] #editor-panel-inspector,
+  [data-editor-layout="compact"] #editor-panel-chat,
+  [data-editor-layout="compact"] .timeline-audio-mixer,
+  [data-editor-layout="compact"] .timeline-keyframe-panel,
+  [data-editor-layout="phone"] .sheet-backdrop {
+    animation: none;
+  }
+  .dock-item, .sheet-close, .preview-undo, .preview-more, .tl-more {
+    transition: none;
+  }
 }

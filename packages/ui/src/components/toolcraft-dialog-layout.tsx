@@ -9,9 +9,9 @@ import {
 } from "./dialog"
 import { cn } from "../lib/utils"
 
-export interface ToolcraftDialogProps {
+export interface ToolcraftDialogProps
+  extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode
-  className?: string
   isOpen?: boolean
   onOpenChange?: (open: boolean) => void
   purpose?: string
@@ -23,12 +23,15 @@ export function ToolcraftDialog({
   className,
   isOpen,
   onOpenChange,
+  purpose,
   width = 512,
+  ...rest
 }: ToolcraftDialogProps) {
   return (
     <DialogRoot open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent
         hideCloseButton
+        {...rest}
         className={cn(
           "!p-0 gap-0 overflow-hidden border-border bg-bg-1 text-fg shadow-xl",
           className,

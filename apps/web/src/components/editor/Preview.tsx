@@ -21,6 +21,9 @@ import {
   Proportions,
   Magnet,
   Repeat,
+  Undo2,
+  Redo2,
+  MoreHorizontal,
 } from "@/icons/lucide-compat";
 import { ToolcraftButton as Button } from "@openreel/ui";
 import { ToolcraftIconButton as IconButton } from "@openreel/ui";
@@ -996,6 +999,7 @@ export const Preview: React.FC = () => {
   const [showAspectMenu, setShowAspectMenu] = useState(false);
   const [showCompositionGrid, setShowCompositionGrid] = useState(false);
   const [showSafeMargins, setShowSafeMargins] = useState(false);
+  const [previewOverflowOpen, setPreviewOverflowOpen] = useState(false);
   const [canvasSnappingEnabled, setCanvasSnappingEnabled] = useState(true);
 
   const ZOOM_OPTIONS = [
@@ -1182,6 +1186,10 @@ export const Preview: React.FC = () => {
   // when any part of the project changes (including clips)
   const project = useProjectStore((state) => state.project);
   const getOriginalMediaItem = useProjectStore((state) => state.getMediaItem);
+  const undo = useProjectStore((state) => state.undo);
+  const redo = useProjectStore((state) => state.redo);
+  const canUndo = useProjectStore((state) => state.canUndo);
+  const canRedo = useProjectStore((state) => state.canRedo);
   const proxySourceRevision = usePreviewProxyStore((state) => state.revision);
   // The revision restarts visual decoding when proxies are created/toggled/removed.
   const getMediaItem = useCallback((id: string) => {
@@ -7646,7 +7654,7 @@ export const Preview: React.FC = () => {
     >
       {/* ── Panel bar header (mockup: 'Player') ───────────────── */}
       {!isMaximized && !isFullscreen && (
-        <div className="flex items-center px-3.5 py-2 border-b border-border bg-bg-1 gap-2.5 min-h-[38px] shrink-0">
+        <div className="preview-player-bar flex items-center px-3.5 py-2 border-b border-border bg-bg-1 gap-2.5 min-h-[38px] shrink-0">
           <Text type="label" color="primary" weight="semibold" className="text-[13px] tracking-tight text-fg m-0">Player</Text>
           <div className="ml-auto flex items-center gap-1">
             <span className="w-1.5 h-1.5 rounded-full bg-accent" title="Live preview" />
@@ -7672,7 +7680,7 @@ export const Preview: React.FC = () => {
       {/* Video Area */}
       <div
         ref={videoAreaRef}
-        className={`flex-1 min-h-0 min-w-0 relative flex items-center justify-center bg-bg-1 transition-all duration-300 ${
+        className={`preview-video-area flex-1 min-h-0 min-w-0 relative flex items-center justify-center bg-bg-1 transition-all duration-300 ${
           isMaximized || isFullscreen ? "p-0" : "p-[18px]"
         } ${zoomLevel > 1 ? "overflow-auto" : ""}`}
         onMouseMove={interactionMode !== "none" ? handleMouseMove : undefined}
@@ -8146,20 +8154,23 @@ export const Preview: React.FC = () => {
       >
         {/* Scrub Bar - integrated at top of controls */}
         <div
-          className="h-1.5 bg-bg-2 cursor-pointer group hover:h-2.5 transition-all relative"
+          className="preview-scrub h-1.5 bg-bg-2 cursor-pointer group hover:h-2.5 transition-all relative"
           onClick={handleScrubClick}
         >
           <div
             className="h-full bg-accent relative pointer-events-none shadow-glow"
             style={{ width: `${progressPercentage}%` }}
           >
-            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity transform scale-0 group-hover:scale-100 duration-100 border border-black/20" />
+            <div className="preview-scrub-thumb absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity transform scale-0 group-hover:scale-100 duration-100 border border-black/20" />
           </div>
         </div>
 
         {/* Controls row */}
-        <div className="h-12 px-4 flex items-center gap-3">
-        <div className="flex items-center gap-2">
+        <div
+          className="preview-controls h-12 px-4 flex items-center gap-3"
+          data-overflow={previewOverflowOpen ? "open" : undefined}
+        >
+        <div className="preview-timecode flex items-center gap-2">
           <span className="font-mono text-[13px] tabular-nums tracking-tight font-medium">
             <span className="text-fg-2">{formatTime(playheadPosition)}</span>
             <span className="text-fg-muted mx-1.5">/</span>
@@ -8167,14 +8178,14 @@ export const Preview: React.FC = () => {
           </span>
         </div>
 
-        <div className="flex items-center gap-4 mx-auto">
+        <div className="preview-transport flex items-center gap-4 mx-auto">
           <IconButton
             label="Skip back 5s"
             icon={<SkipBack size={18} />}
             variant="ghost"
             size="sm"
             onClick={handleSkipBack}
-            className="w-8 h-8 grid place-items-center rounded-md text-fg-2 hover:bg-hover hover:text-fg transition-colors"
+            className="preview-skip w-8 h-8 grid place-items-center rounded-md text-fg-2 hover:bg-hover hover:text-fg transition-colors"
           />
           <IconButton
             label={playbackLockedReason ?? (isPlaying ? "Pause" : "Play")}
@@ -8193,7 +8204,7 @@ export const Preview: React.FC = () => {
               togglePlayback();
             }}
             isDisabled={Boolean(playbackLockedReason)}
-            className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${
+            className={`preview-play w-10 h-10 rounded-full flex items-center justify-center transition-all ${
               playbackLockedReason
                 ? "bg-bg-2 text-fg-muted cursor-not-allowed"
                 : "bg-bg-2 text-fg hover:bg-bg-3"
@@ -8205,11 +8216,12 @@ export const Preview: React.FC = () => {
             variant="ghost"
             size="sm"
             onClick={handleSkipForward}
-            className="w-8 h-8 grid place-items-center rounded-md text-fg-2 hover:bg-hover hover:text-fg transition-colors"
+            className="preview-skip w-8 h-8 grid place-items-center rounded-md text-fg-2 hover:bg-hover hover:text-fg transition-colors"
           />
         </div>
 
-        <div className="flex gap-1.5 items-center">
+        {/* Secondary controls — collapsed behind a "more" menu on tablets/phones */}
+        <div className="preview-secondary flex gap-1.5 items-center">
           <IconButton
             label={loopEnabled ? "Disable preview loop" : "Enable preview loop"}
             title={`Loop ${formatTime(previewLoopRange?.start ?? 0)} to ${formatTime(previewLoopRange?.end ?? 0)} • I: mark start • O: mark end • Shift+L: toggle`}
@@ -8438,6 +8450,46 @@ export const Preview: React.FC = () => {
             }`}
           />
         </div>
+
+        {/* Undo / redo — the action rail owns these on desktop */}
+        <div className="preview-undo-group flex items-center gap-0.5">
+          <IconButton
+            label="Undo"
+            icon={<Undo2 size={17} />}
+            variant="ghost"
+            size="sm"
+            onClick={undo}
+            isDisabled={!canUndo()}
+            className="preview-undo"
+          />
+          <IconButton
+            label="Redo"
+            icon={<Redo2 size={17} />}
+            variant="ghost"
+            size="sm"
+            onClick={redo}
+            isDisabled={!canRedo()}
+            className="preview-undo"
+          />
+        </div>
+
+        {/* More menu — reveals the secondary controls on compact layouts */}
+        <button
+          type="button"
+          className="preview-more"
+          aria-label="More preview controls"
+          aria-expanded={previewOverflowOpen}
+          onClick={() => setPreviewOverflowOpen((open) => !open)}
+        >
+          <MoreHorizontal size={18} aria-hidden />
+        </button>
+        {previewOverflowOpen && (
+          <div
+            className="fixed inset-0 z-50"
+            aria-hidden="true"
+            onClick={() => setPreviewOverflowOpen(false)}
+          />
+        )}
         </div>
       </div>
     </div>

@@ -74,6 +74,7 @@ import {
 } from "@openreel/core";
 import { EDITING_FRAME_RATE_OPTIONS } from "./editing-frame-rate";
 import type { ExportDeliveryMode } from "../../services/export-runner";
+import { useEditorLayout } from "../../hooks/useEditorLayout";
 
 const WEB_EXPORT_GUARDRAIL_MESSAGE =
   "ProRes, transparency, and high bit depth require the desktop encoder. You can export an H.264 MP4 without transparency in this browser.";
@@ -159,6 +160,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
 }) => {
   const isDesktop =
     typeof window !== "undefined" && window.openreel?.platform === "desktop";
+  const layout = useEditorLayout();
   const [delivery, setDelivery] = useState<ExportDeliveryMode>(isDesktop ? "file" : "download");
   const [capabilityError, setCapabilityError] = useState<string | null>(null);
   const [checkingCapability, setCheckingCapability] = useState(false);
@@ -536,10 +538,11 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
       onOpenChange={(open) => !open && onClose()}
       width={1000}
       purpose="form"
-      className="rounded-xl"
+      className="rounded-xl export-dialog"
+      data-editor-layout={layout}
     >
       <Layout
-        className="h-[min(820px,calc(100vh-40px))]"
+        className="h-[min(820px,calc(100dvh-24px))]"
         header={
           <DialogHeader
             title="Export Video"
@@ -552,23 +555,26 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
         }
         content={
           <LayoutContent className="flex min-h-0 flex-1 flex-col overflow-hidden bg-bg p-0">
-            <div className="shrink-0 space-y-3 border-b border-border bg-bg-1 px-5 py-4">
+            <div className="export-tabs-row shrink-0 space-y-3 border-b border-border bg-bg-1 px-5 py-4">
               <ToolcraftSegmentedControl<"presets" | "custom" | "reduce">
                 ariaLabel="Export mode"
                 value={activeTab}
                 onChange={setActiveTab}
-                className="max-w-[440px] bg-bg-2"
+                className="export-mode-tabs max-w-[440px] bg-bg-2"
                 options={[
                   { value: "presets", label: "Presets" },
                   { value: "reduce", label: "Smaller File" },
-                  { value: "custom", label: "Custom Settings" },
+                  {
+                    value: "custom",
+                    label: layout === "phone" ? "Custom" : "Custom Settings",
+                  },
                 ]}
               />
 
               {sourceMatch && activeTab === "presets" && (
                 <div
                   data-testid="quick-export-card"
-                  className="flex min-h-[72px] items-center justify-between gap-4 rounded-[10px] border border-accent/30 bg-accent/5 px-4 py-3"
+                  className="export-quick-card flex min-h-[72px] items-center justify-between gap-4 rounded-[10px] border border-accent/30 bg-accent/5 px-4 py-3"
                 >
                   <div className="flex min-w-0 items-start gap-3">
                     <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent/15 text-accent">
@@ -615,66 +621,68 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
             </div>
 
             {activeTab === "presets" && (
-              <div className="flex min-h-0 flex-1 overflow-hidden">
-                <aside className="w-52 shrink-0 overflow-y-auto border-r border-border bg-bg-1 p-3">
-                  <div className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-muted">
+              <div className="export-presets flex min-h-0 flex-1 overflow-hidden">
+                <aside className="export-browse w-52 shrink-0 overflow-y-auto border-r border-border bg-bg-1 p-3">
+                  <div className="export-browse-label px-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-muted">
                     Browse presets
                   </div>
-                  <SelectableCard
-                    label="For Your Video"
-                    isSelected={selectedPlatform === "recommended"}
-                    onClick={() => setSelectedPlatform("recommended")}
-                    onChange={() => setSelectedPlatform("recommended")}
-                    padding={0}
-                    variant="transparent"
-                    className={`mb-2 flex w-full flex-col items-start px-3 py-2.5 text-[12px] transition-colors ${
-                      selectedPlatform === "recommended"
-                        ? "border-accent/30 bg-selected text-fg shadow-none"
-                        : "text-fg-2"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Zap size={14} className="text-accent" />
-                      <span className="font-semibold">Recommended</span>
-                    </div>
-                    <span className="ml-5 mt-1 text-[10px] leading-4 text-fg-muted">
-                      {getAspectRatioLabel(aspectType)}
-                    </span>
-                  </SelectableCard>
-                  <div className="mb-2 h-px bg-border" />
-                  {platforms.map((platform) => {
-                    const PlatformIcon = PLATFORM_ICONS[platform] ?? Globe;
-                    return (
-                      <SelectableCard
-                        key={platform}
-                        label={platform}
-                        isSelected={selectedPlatform === platform}
-                        onClick={() => setSelectedPlatform(platform)}
-                        onChange={() => setSelectedPlatform(platform)}
-                        padding={0}
-                        variant="transparent"
-                        className={`mb-1 flex w-full items-center gap-2.5 px-3 py-2 text-[12px] transition-colors ${
-                          selectedPlatform === platform
-                            ? "border-accent/30 bg-selected text-fg shadow-none"
-                            : "text-fg-2"
-                        }`}
-                      >
-                        <PlatformIcon
-                          size={14}
-                          className={
+                  <div className="export-browse-list">
+                    <SelectableCard
+                      label="For Your Video"
+                      isSelected={selectedPlatform === "recommended"}
+                      onClick={() => setSelectedPlatform("recommended")}
+                      onChange={() => setSelectedPlatform("recommended")}
+                      padding={0}
+                      variant="transparent"
+                      className={`mb-2 flex w-full flex-col items-start px-3 py-2.5 text-[12px] transition-colors ${
+                        selectedPlatform === "recommended"
+                          ? "border-accent/30 bg-selected text-fg shadow-none"
+                          : "text-fg-2"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Zap size={14} className="text-accent" />
+                        <span className="font-semibold">Recommended</span>
+                      </div>
+                      <span className="ml-5 mt-1 text-[10px] leading-4 text-fg-muted">
+                        {getAspectRatioLabel(aspectType)}
+                      </span>
+                    </SelectableCard>
+                    <div className="export-browse-divider mb-2 h-px bg-border" />
+                    {platforms.map((platform) => {
+                      const PlatformIcon = PLATFORM_ICONS[platform] ?? Globe;
+                      return (
+                        <SelectableCard
+                          key={platform}
+                          label={platform}
+                          isSelected={selectedPlatform === platform}
+                          onClick={() => setSelectedPlatform(platform)}
+                          onChange={() => setSelectedPlatform(platform)}
+                          padding={0}
+                          variant="transparent"
+                          className={`mb-1 flex w-full items-center gap-2.5 px-3 py-2 text-[12px] transition-colors ${
                             selectedPlatform === platform
-                              ? "text-accent"
-                              : "text-fg-muted"
-                          }
-                        />
-                        {platform}
-                      </SelectableCard>
-                    );
-                  })}
+                              ? "border-accent/30 bg-selected text-fg shadow-none"
+                              : "text-fg-2"
+                          }`}
+                        >
+                          <PlatformIcon
+                            size={14}
+                            className={
+                              selectedPlatform === platform
+                                ? "text-accent"
+                                : "text-fg-muted"
+                            }
+                          />
+                          {platform}
+                        </SelectableCard>
+                      );
+                    })}
+                  </div>
                 </aside>
 
-                <main className="min-w-0 flex-1 overflow-y-auto p-5">
-                  <div className="mb-4 flex items-end justify-between gap-4">
+                <main className="export-main min-w-0 flex-1 overflow-y-auto p-5">
+                  <div className="export-main-head mb-4 flex items-end justify-between gap-4">
                     <div>
                       <h3 className="text-[14px] font-semibold text-fg">
                         {selectedPlatform === "recommended"
@@ -690,7 +698,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
                       {filteredPresets.length} options
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="export-grid grid grid-cols-2 gap-3">
                     {filteredPresets.map((preset) => {
                       const PlatformIcon =
                         PLATFORM_ICONS[preset.platform] ?? Globe;
@@ -777,7 +785,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
             )}
 
             {activeTab === "reduce" && (
-              <div className="flex-1 overflow-y-auto p-4">
+              <div className="export-reduce-body flex-1 overflow-y-auto p-4">
                 <div className="max-w-xl mx-auto space-y-5">
                   <div className="flex items-start gap-2.5 p-3 rounded-lg border border-border bg-background-tertiary/40">
                     <Minimize2
@@ -844,7 +852,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
                       >
                         Quality
                       </Text>
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="export-quality-grid grid grid-cols-3 gap-2">
                         {(
                           [
                             ["light", "Light", "Trim a little"],
@@ -895,7 +903,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
                       >
                         Target size
                       </Text>
-                      <div className="grid grid-cols-3 gap-2">
+                      <div className="export-size-grid grid grid-cols-3 gap-2">
                         {COMPRESSION_SIZE_PRESETS.map((preset) => (
                           <SelectableCard
                             key={preset.id}
@@ -985,7 +993,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
                         </p>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="export-field-grid grid grid-cols-2 gap-4">
                       <Selector
                         label="Format"
                         value={customSettings.format}
@@ -1097,7 +1105,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
                         </p>
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="export-field-grid grid grid-cols-2 gap-4">
                       <ToolcraftNumberInputControl
                         label="Bitrate (kbps)"
                         value={customSettings.bitrate}
@@ -1206,7 +1214,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
                         </p>
                       </div>
                     </div>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="export-audio-grid grid grid-cols-3 gap-2">
                       {!isDesktop ? (
                         <div className="space-y-1 text-[11px]">
                           <p className="text-fg-muted">Audio format</p>
@@ -1404,7 +1412,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
             )}
 
             {deviceProfile && (
-              <div className="shrink-0 border-t border-border bg-bg-1 px-5 py-2.5">
+              <div className="export-device-strip shrink-0 border-t border-border bg-bg-1 px-5 py-2.5">
                 <div className="flex items-center justify-between gap-4">
                   <Button
                     label="Show device export estimate details"
@@ -1467,7 +1475,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
                 </div>
 
                 {showDeviceInfo && (
-                  <div className="mt-2 grid grid-cols-3 gap-4 rounded-lg bg-bg-2 px-3 py-2.5 text-[10px]">
+                  <div className="export-device-details mt-2 grid grid-cols-3 gap-4 rounded-lg bg-bg-2 px-3 py-2.5 text-[10px]">
                     <div>
                       <span className="text-fg-muted">CPU</span>
                       <Text
@@ -1533,7 +1541,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
         footer={
           <LayoutFooter
             hasDivider
-            className="flex-col items-stretch gap-3 px-5 py-3"
+            className="export-footer flex-col items-stretch gap-3 px-5 py-3"
           >
             {!isDesktop && (
               <div className="space-y-1.5">
@@ -1597,7 +1605,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
                 )}
               </div>
             )}
-            <div className="flex items-center justify-between gap-4">
+            <div className="export-footer-actions flex items-center justify-between gap-4">
               <div className="flex min-w-0 flex-wrap items-center gap-2 text-[11px] text-fg-muted">
                 {duration > 0 && (
                   <>

@@ -4,9 +4,29 @@ import {
   Settings,
   MoreHorizontal,
   Video,
+  House,
+  Search,
+  Clock,
+  Diamond,
+  Play,
+  Sparkles,
+  FileCode,
+  Circle,
+  Sun,
+  Moon,
+  SunMoon,
 } from "@/icons/lucide-compat";
 import { useProjectStore } from "../../stores/project-store";
 import { useUIStore } from "../../stores/ui-store";
+import { useThemeStore } from "../../stores/theme-store";
+import { useSettingsStore } from "../../stores/settings-store";
+import { useRouter } from "../../hooks/use-router";
+import {
+  startTour,
+  ONBOARDING_KEY,
+  startMoGraphTour,
+  MOGRAPH_TOUR_KEY,
+} from "./tour";
 import {
   getDeviceProfile,
   estimateExportTime,
@@ -54,6 +74,25 @@ export const Toolbar: React.FC = () => {
   const setGlobalExportState = useUIStore((state) => state.setExportState);
   const activeModal = useUIStore((state) => state.activeModal);
   const closeModal = useUIStore((state) => state.closeModal);
+  const toggleKeyframeEditor = useUIStore((state) => state.toggleKeyframeEditor);
+  const { navigate } = useRouter();
+  const { mode: themeMode, toggleTheme } = useThemeStore();
+  const { openSettings } = useSettingsStore();
+
+  const themeLabel =
+    themeMode === "auto"
+      ? "System"
+      : themeMode.charAt(0).toUpperCase() + themeMode.slice(1);
+  const nextThemeLabel =
+    themeMode === "light" ? "Dark" : themeMode === "dark" ? "System" : "Light";
+  const themeIcon =
+    themeMode === "light" ? (
+      <Sun size={15} aria-hidden />
+    ) : themeMode === "dark" ? (
+      <Moon size={15} aria-hidden />
+    ) : (
+      <SunMoon size={15} aria-hidden />
+    );
   const [isExportOpen, setIsExportOpen] = useState(false);
   const isExportDialogOpen = activeModal === "export";
   const openExportDialog = useCallback(() => {
@@ -376,7 +415,18 @@ export const Toolbar: React.FC = () => {
   ];
 
   return (
-    <header className="h-[60px] flex items-center gap-2 px-2 sm:gap-[18px] sm:px-[18px] bg-bg-1 border-b border-border shrink-0 z-30 relative">
+    <header className="editor-topbar flex items-center gap-2 px-2 sm:gap-[18px] sm:px-[18px] bg-bg-1 border-b border-border shrink-0 z-30 relative">
+      {/* ─── Leading: home (stacked layouts — desktop keeps it in the rail) ─── */}
+      <div className="topbar-compact-only shrink-0">
+        <ToolcraftIconButton
+          label="Back to home"
+          icon={<House size={16} aria-hidden />}
+          size="sm"
+          variant="ghost"
+          onClick={() => navigate("welcome")}
+        />
+      </div>
+
       {/* ─── Center: project name ─────────────────────────────── */}
       <div className="flex flex-1 min-w-0 items-center justify-center gap-1.5">
         <ToolcraftTextInputControl
@@ -399,8 +449,87 @@ export const Toolbar: React.FC = () => {
         <ProjectSwitcher />
       </div>
 
-      {/* ─── Right: export only ───────────────────────────────── */}
-      <div className="flex items-center justify-end shrink-0">
+      {/* ─── Right: overflow menu + export ────────────────────── */}
+      <div className="flex items-center justify-end shrink-0 gap-1">
+        {/* Overflow: the actions desktop keeps in its vertical action rail */}
+        <div className="topbar-compact-only">
+          <DropdownMenu
+            placement="below"
+            alignment="end"
+            hasChevron={false}
+            menuWidth={244}
+            button={{
+              label: "More editor actions",
+              isIconOnly: true,
+              size: "sm",
+              variant: "ghost",
+              icon: <MoreHorizontal size={18} aria-hidden />,
+            }}
+            items={[
+              {
+                label: "Search tools & effects",
+                icon: <Search size={15} aria-hidden />,
+                onClick: () => useUIStore.getState().openModal("search"),
+              },
+              {
+                label: "Action history",
+                icon: <Clock size={15} aria-hidden />,
+                onClick: () => useUIStore.getState().openModal("history"),
+              },
+              {
+                label: "Keyframe editor",
+                icon: <Diamond size={15} aria-hidden />,
+                onClick: toggleKeyframeEditor,
+              },
+              {
+                label: "Project JSON / comments",
+                icon: <FileCode size={15} aria-hidden />,
+                onClick: () => useUIStore.getState().openModal("scriptView"),
+              },
+              { type: "divider" },
+              {
+                label: `Theme: ${themeLabel}`,
+                description: `Switch to ${nextThemeLabel}`,
+                icon: themeIcon,
+                onClick: toggleTheme,
+              },
+              {
+                label: "Settings & API keys",
+                icon: <Settings size={15} aria-hidden />,
+                onClick: () => openSettings(),
+              },
+              {
+                label: "Screen recorder",
+                icon: (
+                  <Circle
+                    size={15}
+                    className="fill-current text-status-error"
+                    aria-hidden
+                  />
+                ),
+                onClick: () => useUIStore.getState().openModal("recorder"),
+              },
+              { type: "divider" },
+              {
+                label: "Editor tour",
+                icon: <Play size={15} aria-hidden />,
+                onClick: () => {
+                  localStorage.removeItem(ONBOARDING_KEY);
+                  startTour();
+                },
+              },
+              {
+                label: "Animation & effects tour",
+                icon: <Sparkles size={15} className="text-accent" aria-hidden />,
+                onClick: () => {
+                  localStorage.removeItem(MOGRAPH_TOUR_KEY);
+                  startMoGraphTour();
+                },
+              },
+            ]}
+          />
+        </div>
+
         {/* Export */}
         {exportState.isExporting ? (
           <button

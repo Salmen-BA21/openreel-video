@@ -23,10 +23,14 @@ const SOURCE_MATCH: SourceExportMatch = {
   sourceName: "source-match.mp4",
 };
 
+const originalWidth = window.innerWidth;
+
 describe("ExportDialog", () => {
   afterEach(() => {
     cleanup();
     vi.mocked(checkBrowserExportCapability).mockImplementation(() => new Promise<never>(() => undefined));
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: originalWidth });
+    window.dispatchEvent(new Event("resize"));
   });
 
   it("keeps the source-match shortcut in the presets view", () => {
@@ -129,5 +133,24 @@ describe("ExportDialog", () => {
     expect(screen.getByRole("checkbox", { name: "Project settings" })).toBeChecked();
     expect(screen.queryByRole("checkbox", { name: "YouTube 4K" })).not.toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: "4K ProRes HQ" })).not.toBeInTheDocument();
+  });
+
+  it("adapts to the phone tier: stamped attribute, shortened tabs, stacked presets", () => {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+    window.dispatchEvent(new Event("resize"));
+    render(<ExportDialog isOpen onClose={vi.fn()} onExport={vi.fn()} duration={5} />);
+
+    // The dialog is portaled outside the editor shell, so it mirrors the
+    // tier onto its own surface for the responsive CSS to scope against.
+    const surface = document.querySelector(".export-dialog");
+    expect(surface).not.toBeNull();
+    expect(surface!.getAttribute("data-editor-layout")).toBe("phone");
+
+    // Tab labels shorten instead of ellipsizing at 360–390px…
+    expect(screen.getByRole("radio", { name: "Custom" })).toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: "Custom Settings" })).not.toBeInTheDocument();
+
+    // …and the preset platforms sit in a horizontal strip wrapper.
+    expect(document.querySelector(".export-browse-list")).not.toBeNull();
   });
 });

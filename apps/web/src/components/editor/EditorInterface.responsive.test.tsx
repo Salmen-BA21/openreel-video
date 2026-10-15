@@ -31,6 +31,12 @@ function resize(width: number) {
   });
 }
 
+function layoutOf(view: { container: HTMLElement }) {
+  return view.container
+    .querySelector(".editor-shell")
+    ?.getAttribute("data-editor-layout");
+}
+
 describe("compact editing workspace", () => {
   const originalWidth = window.innerWidth;
   beforeEach(() => {
@@ -44,25 +50,44 @@ describe("compact editing workspace", () => {
   });
   afterEach(() => { cleanup(); vi.restoreAllMocks(); resize(originalWidth); });
 
-  it("keeps preview, media search, inspector and timeline state mounted across phone tabs and desktop resize", () => {
+  it("keeps preview, media search, inspector and timeline state mounted across dock panels and desktop resize", () => {
     const view = render(<EditorInterface />);
     const canvas = view.getByLabelText("Video preview");
     const media = view.getByLabelText("Media search") as HTMLInputElement;
     const title = view.getByLabelText("Clip title") as HTMLInputElement;
     const timeline = view.getByLabelText("Timeline state") as HTMLInputElement;
     media.value = "family"; title.value = "My video"; timeline.value = "scroll 500";
+    expect(layoutOf(view)).toBe("phone");
     expect(view.container.querySelector("#editor-panel-timeline")).not.toHaveAttribute("hidden");
-    for (const panel of ["Media", "Edit", "Timeline"]) {
+
+    for (const panel of ["Media", "Text", "Edit"]) {
       fireEvent.click(view.getByRole("button", { name: panel }));
       expect(view.getByLabelText("Video preview")).toBe(canvas);
       expect(view.getByRole("button", { name: panel })).toHaveAttribute("aria-pressed", "true");
+      // The timeline stays on screen while a sheet is open.
+      expect(view.container.querySelector("#editor-panel-timeline")).not.toHaveAttribute("hidden");
     }
+    expect(view.container.querySelector("#editor-panel-inspector")).not.toHaveAttribute("hidden");
+    expect(view.container.querySelector("#editor-panel-media")).toHaveAttribute("hidden");
     expect(view.getByLabelText("Media search")).toBe(media);
     expect(media.value).toBe("family"); expect(title.value).toBe("My video");
     expect(timeline.value).toBe("scroll 500");
+
+    // Tapping the active dock item dismisses the sheet.
+    fireEvent.click(view.getByRole("button", { name: "Edit" }));
+    expect(view.getByRole("button", { name: "Edit" })).toHaveAttribute("aria-pressed", "false");
+
+    // Sheet chrome closes too (tap "Media", then its close affordance).
+    fireEvent.click(view.getByRole("button", { name: "Media" }));
+    expect(view.container.querySelector("#editor-panel-media")).not.toHaveAttribute("hidden");
+    fireEvent.click(view.getByRole("button", { name: "Close Media" }));
+    expect(view.container.querySelector("#editor-panel-media")).toHaveAttribute("hidden");
+
     resize(820);
+    expect(layoutOf(view)).toBe("compact");
     expect(view.getByRole("navigation", { name: "Editor workspace" })).toBeInTheDocument();
     resize(1600);
+    expect(layoutOf(view)).toBe("desktop");
     expect(view.queryByRole("navigation", { name: "Editor workspace" })).toBeNull();
     expect(view.container.querySelector("#editor-panel-inspector")).not.toHaveAttribute("hidden");
     expect(view.getByLabelText("Video preview")).toBe(canvas);
@@ -70,16 +95,17 @@ describe("compact editing workspace", () => {
     expect(title.value).toBe("My video");
   });
 
-  it("preserves AI drafts after switching panels and returns to timeline when AI closes", async () => {
+  it("preserves AI chat drafts after switching dock panels and returns to the timeline when AI closes", async () => {
     const view = render(<EditorInterface />);
-    fireEvent.click(view.getByRole("button", { name: "AI" }));
+    fireEvent.click(view.getByRole("button", { name: "Chat" }));
     const input = await view.findByLabelText("AI message") as HTMLInputElement;
     input.value = "Make this shorter";
-    fireEvent.click(view.getByRole("button", { name: "Timeline" }));
-    fireEvent.click(view.getByRole("button", { name: "AI" }));
+    fireEvent.click(view.getByRole("button", { name: "Media" }));
+    fireEvent.click(view.getByRole("button", { name: "Chat" }));
     expect(view.getByLabelText("AI message")).toBe(input);
     expect(input.value).toBe("Make this shorter");
     fireEvent.click(view.getByRole("button", { name: "Close AI" }));
-    expect(view.getByRole("button", { name: "Timeline" })).toHaveAttribute("aria-pressed", "true");
+    expect(view.getByRole("button", { name: "Chat" })).toHaveAttribute("aria-pressed", "false");
+    expect(view.container.querySelector("#editor-panel-chat")).toHaveAttribute("hidden");
   });
 });

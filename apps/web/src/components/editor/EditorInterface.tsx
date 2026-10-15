@@ -3,7 +3,7 @@ import { ToolcraftText as Text, ToolcraftButton as Button } from "@openreel/ui";
 
 import { Toolbar } from "./Toolbar";
 import { EditorActionRail } from "./EditorActionRail";
-import { AssetsPanel } from "./AssetsPanel";
+import { AssetsPanel, type AssetsTab } from "./AssetsPanel";
 import { Preview } from "./Preview";
 import { InspectorPanel } from "./InspectorPanel";
 import { Timeline } from "./Timeline";
@@ -12,11 +12,13 @@ import { AudioMixer } from "../audio-mixer";
 import { KeyboardShortcutsOverlay } from "./KeyboardShortcutsOverlay";
 import { PanelErrorBoundary } from "../ErrorBoundary";
 import { SpotlightTour, MoGraphTour } from "./tour";
+import { MobileToolDock, type DockTarget } from "./MobileToolDock";
+import { PanelSheetHead, SheetBackdrop, DEFAULT_SHEET_DETENT } from "./PanelSheet";
 import { useProjectStore } from "../../stores/project-store";
 import { useUIStore } from "../../stores/ui-store";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
 import { useEditorInitialization } from "../../hooks/useEditorInitialization";
-import { useCompactEditor } from "../../hooks/useCompactEditor";
+import { useEditorLayout } from "../../hooks/useEditorLayout";
 import "./editor-responsive.css";
 
 const ChatPanel = React.lazy(() =>
@@ -83,8 +85,10 @@ const useAutoSave = () => {
  * properties on the root grid so panels can pick them up.
  */
 export const EditorInterface: React.FC = () => {
-  const compact = useCompactEditor();
+  const layout = useEditorLayout();
+  const compact = layout !== "desktop";
   const [compactPanel, setCompactPanel] = useState<"timeline" | "media" | "inspector" | "chat">("timeline");
+  const [assetTab, setAssetTab] = useState<AssetsTab>("media");
   const [hasOpenedChat, setHasOpenedChat] = useState(false);
   const { initialized, initializing, initError, initStatus, retry } =
     useEditorInitialization();
@@ -98,6 +102,7 @@ export const EditorInterface: React.FC = () => {
   const selectedItems = useUIStore((state) => state.selectedItems);
   const panels = useUIStore((state) => state.panels);
   const setPanelVisible = useUIStore((state) => state.setPanelVisible);
+  const togglePanel = useUIStore((state) => state.togglePanel);
   const timelineMaximized = useUIStore((state) => state.timelineMaximized);
   const tracks = useProjectStore((state) => state.project.timeline.tracks);
   const updateClipKeyframes = useProjectStore((state) => state.updateClipKeyframes);
@@ -196,6 +201,7 @@ export const EditorInterface: React.FC = () => {
   const [inspectorWidth, setInspectorWidth] = useState(() => window.innerWidth < 1600 ? MIN_INSPECTOR_W : DEFAULT_INSPECTOR_W);
   const [chatWidth, setChatWidth] = useState(DEFAULT_CHAT_W);
   const [timelineVh, setTimelineVh] = useState(DEFAULT_TIMELINE_VH);
+  const [sheetDetent, setSheetDetent] = useState(DEFAULT_SHEET_DETENT);
 
   const chatVisible = panels.agentChat?.visible ?? false;
   useEffect(() => {
@@ -209,6 +215,37 @@ export const EditorInterface: React.FC = () => {
     setPanelVisible("agentChat", panel === "chat");
     if (panel === "chat") setHasOpenedChat(true);
   };
+
+  /** Bottom tool dock → the matching sheet / drawer / panel. */
+  const openDockTarget = (target: DockTarget) => {
+    if (target.kind === "assets") {
+      const alreadyShowingSameTab = compactPanel === "media" && assetTab === target.tab;
+      setAssetTab(target.tab);
+      openCompactPanel(alreadyShowingSameTab ? "timeline" : "media");
+      return;
+    }
+    if (target.kind === "mixer") {
+      togglePanel("audioMixer");
+      return;
+    }
+    const panel: typeof compactPanel =
+      target.kind === "inspector" ? "inspector" : "chat";
+    openCompactPanel(compactPanel === panel ? "timeline" : panel);
+  };
+
+  /** Close every stacked-layout sheet (backdrop tap, Escape). */
+  const closeCompactSheets = () => {
+    setCompactPanel("timeline");
+    const state = useUIStore.getState();
+    if (state.panels.agentChat?.visible) state.setPanelVisible("agentChat", false);
+    if (state.panels.audioMixer?.visible) state.setPanelVisible("audioMixer", false);
+    if (state.keyframeEditorOpen) state.setKeyframeEditorOpen(false);
+  };
+
+  const sheetOpen =
+    compactPanel !== "timeline" ||
+    Boolean(panels.audioMixer?.visible) ||
+    keyframeEditorOpen;
 
   const mediaRef = useRef(mediaWidth);
   const inspectorRef = useRef(inspectorWidth);
@@ -308,8 +345,35 @@ export const EditorInterface: React.FC = () => {
     r.style.setProperty("--media-w", `${mediaWidth}px`);
     r.style.setProperty("--inspector-w", `${inspectorWidth}px`);
     r.style.setProperty("--chat-w", `${chatWidth}px`);
-    r.style.setProperty("--tl-height", `${tlVh}vh`);
+    r.style.setProperty("--tl-height", `${tlVh}dvh`);
   }, [mediaWidth, inspectorWidth, chatWidth, timelineVh, timelineMaximized]);
+
+  // Stacked layouts: Escape dismisses the open sheet (unless the user is
+  // typing, so editing text never yanks the panel away).
+  useEffect(() => {
+    if (layout === "desktop") return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      const active = document.activeElement as HTMLElement | null;
+      if (
+        active &&
+        (active.tagName === "INPUT" ||
+          active.tagName === "TEXTAREA" ||
+          active.isContentEditable)
+      ) {
+        return;
+      }
+      const state = useUIStore.getState();
+      const sheetVisible =
+        state.keyframeEditorOpen ||
+        Boolean(state.panels.audioMixer?.visible) ||
+        compactPanel !== "timeline";
+      if (!sheetVisible) return;
+      closeCompactSheets();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [layout, compactPanel]);
 
   if (initializing || !initialized) {
     return (
@@ -340,25 +404,32 @@ export const EditorInterface: React.FC = () => {
   const effectiveTimelineVh = timelineMaximized
     ? COMPACT_TIMELINE_VH
     : timelineVh;
-  const gridStyle: React.CSSProperties = compact
-    ? { gridTemplateColumns: "minmax(0, 1fr)", gridTemplateRows: "minmax(150px, 36%) minmax(0, 1fr)", gridTemplateAreas: `'stage' '${compactPanel}'` }
-    : chatVisible
-    ? {
-        gridTemplateColumns: `${mediaWidth}px ${RESIZE_HANDLE}px 1fr ${RESIZE_HANDLE}px ${inspectorWidth}px ${RESIZE_HANDLE}px ${chatWidth}px`,
-        gridTemplateRows: `1fr ${RESIZE_HANDLE}px ${effectiveTimelineVh}vh`,
-        gridTemplateAreas:
-          "'media mh stage ih inspector ch chat' 'th th th th th th th' 'timeline timeline timeline timeline timeline timeline timeline'",
-      }
-    : {
-        gridTemplateColumns: `${mediaWidth}px ${RESIZE_HANDLE}px 1fr ${RESIZE_HANDLE}px ${inspectorWidth}px`,
-        gridTemplateRows: `1fr ${RESIZE_HANDLE}px ${effectiveTimelineVh}vh`,
-        gridTemplateAreas:
-          "'media mh stage ih inspector' 'th th th th th' 'timeline timeline timeline timeline timeline'",
-      };
+  // Desktop keeps the resizable multi-column grid (inline CSS). The stacked
+  // phone/tablet layout is driven entirely by editor-responsive.css via
+  // `data-editor-layout`, so JS and CSS can never disagree.
+  const gridStyle: React.CSSProperties =
+    layout !== "desktop"
+      ? {}
+      : chatVisible
+      ? {
+          gridTemplateColumns: `${mediaWidth}px ${RESIZE_HANDLE}px 1fr ${RESIZE_HANDLE}px ${inspectorWidth}px ${RESIZE_HANDLE}px ${chatWidth}px`,
+          gridTemplateRows: `1fr ${RESIZE_HANDLE}px ${effectiveTimelineVh}dvh`,
+          gridTemplateAreas:
+            "'media mh stage ih inspector ch chat' 'th th th th th th th' 'timeline timeline timeline timeline timeline timeline timeline'",
+        }
+      : {
+          gridTemplateColumns: `${mediaWidth}px ${RESIZE_HANDLE}px 1fr ${RESIZE_HANDLE}px ${inspectorWidth}px`,
+          gridTemplateRows: `1fr ${RESIZE_HANDLE}px ${effectiveTimelineVh}dvh`,
+          gridTemplateAreas:
+            "'media mh stage ih inspector' 'th th th th th' 'timeline timeline timeline timeline timeline'",
+        };
 
   return (
     <div
       ref={rootRef}
+      data-editor-layout={layout}
+      data-sheet-detent={sheetDetent}
+      data-timeline-maximized={timelineMaximized ? "true" : "false"}
       className={`editor-shell w-full h-full bg-bg text-fg overflow-hidden font-sans select-none relative z-20 flex flex-col ${compact ? "editor-compact" : ""}`}
     >
       <Toolbar />
@@ -375,8 +446,15 @@ export const EditorInterface: React.FC = () => {
           className="editor-panel bg-bg-1 min-w-0 min-h-0 overflow-hidden rounded-xl border border-border shadow-sm"
           style={{ gridArea: "media" }}
         >
+          <PanelSheetHead
+            title="Media"
+            shellRef={rootRef}
+            detent={sheetDetent}
+            onDetentChange={setSheetDetent}
+            onClose={() => openCompactPanel("timeline")}
+          />
           <PanelErrorBoundary name="Media">
-            <AssetsPanel />
+            <AssetsPanel activeTab={assetTab} />
           </PanelErrorBoundary>
         </div>
 
@@ -413,6 +491,13 @@ export const EditorInterface: React.FC = () => {
           className="editor-panel bg-bg-1 min-w-0 min-h-0 overflow-hidden rounded-xl border border-border shadow-sm"
           style={{ gridArea: "inspector" }}
         >
+          <PanelSheetHead
+            title="Edit clip"
+            shellRef={rootRef}
+            detent={sheetDetent}
+            onDetentChange={setSheetDetent}
+            onClose={() => openCompactPanel("timeline")}
+          />
           <PanelErrorBoundary name="Inspector">
             <InspectorPanel />
           </PanelErrorBoundary>
@@ -435,6 +520,13 @@ export const EditorInterface: React.FC = () => {
               className="editor-panel bg-bg-1 min-w-0 min-h-0 overflow-hidden rounded-xl border border-border shadow-sm"
               style={{ gridArea: "chat" }}
             >
+              <PanelSheetHead
+                title="AI Editor"
+                shellRef={rootRef}
+                detent={sheetDetent}
+                onDetentChange={setSheetDetent}
+                onClose={() => openCompactPanel("timeline")}
+              />
               <PanelErrorBoundary name="AI Editor">
                 <React.Suspense
                   fallback={
@@ -463,12 +555,11 @@ export const EditorInterface: React.FC = () => {
 
         <div
           id="editor-panel-timeline"
-          hidden={compact && compactPanel !== "timeline"}
           className="editor-panel bg-tl-bg min-w-0 min-h-0 overflow-hidden flex flex-col rounded-xl border border-border shadow-sm"
           style={{ gridArea: "timeline" }}
         >
           {panels.audioMixer?.visible && (
-            <div className="shrink-0 border-b border-border">
+            <div className="timeline-audio-mixer shrink-0 border-b border-border">
               <PanelErrorBoundary name="Audio Mixer">
                 <AudioMixer
                   visible
@@ -478,9 +569,16 @@ export const EditorInterface: React.FC = () => {
             </div>
           )}
 
-          {compact && selectedItems.length > 0 && (
-            <button type="button" onClick={() => openCompactPanel("inspector")} className="shrink-0 text-xs text-accent bg-accent/10">
-              Edit selected clip · trim, captions, audio & effects
+          {compact && selectedItems.length > 0 && compactPanel !== "inspector" && (
+            <button
+              type="button"
+              onClick={() => openCompactPanel("inspector")}
+              className="compact-context-bar"
+            >
+              <span className="truncate">
+                Clip selected — trim, captions, audio &amp; effects
+              </span>
+              <span className="context-cta">Edit</span>
             </button>
           )}
           <div className="flex-1 min-h-0 flex">
@@ -491,7 +589,7 @@ export const EditorInterface: React.FC = () => {
             </div>
 
             {keyframeEditorOpen && (
-              <div className="shrink-0 min-w-0 border-l border-border">
+              <div className="timeline-keyframe-panel shrink-0 min-w-0 border-l border-border">
                 <PanelErrorBoundary name="Keyframe Editor">
                   <KeyframeEditorPanel
                     clip={selectedClip}
@@ -512,17 +610,16 @@ export const EditorInterface: React.FC = () => {
       </div>
       </div>
 
+      {compact && sheetOpen && <SheetBackdrop onClose={closeCompactSheets} />}
+
       {compact && (
-        <nav aria-label="Editor workspace" className="editor-workspace-tabs">
-          {([
-            ["timeline", "Timeline"], ["media", "Media"], ["inspector", "Edit"], ["chat", "AI"],
-          ] as const).map(([panel, label]) => (
-            <button key={panel} type="button" aria-controls={`editor-panel-${panel}`} aria-pressed={compactPanel === panel}
-              onClick={() => openCompactPanel(panel)} className={compactPanel === panel ? "text-accent bg-accent/10" : "text-fg-muted"}>
-              {label}
-            </button>
-          ))}
-        </nav>
+        <MobileToolDock
+          activePanel={compactPanel}
+          activeAssetTab={assetTab}
+          mixerVisible={Boolean(panels.audioMixer?.visible)}
+          hasSelection={selectedItems.length > 0}
+          onSelect={openDockTarget}
+        />
       )}
 
       <KeyboardShortcutsOverlay
