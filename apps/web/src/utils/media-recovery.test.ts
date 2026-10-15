@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { MediaItem } from "@openreel/core";
+import type { MediaItem, Project } from "@openreel/core";
 import {
+  clearSavingFlag,
   createMissingMediaItem,
   generateThumbnailFromBlob,
   restoreMediaItem,
@@ -125,5 +126,29 @@ describe("media recovery", () => {
       isPlaceholder: true,
       sourceFile: item.sourceFile,
     });
+  });
+
+  it("clears a saving flag captured by an autosave mid-commit", () => {
+    const project = {
+      ...({ id: "project-1", mediaLibrary: {} } as unknown as Project),
+      mediaLibrary: {
+        items: [
+          mediaItem({ id: "writing", isSaving: true }),
+          mediaItem({ id: "settled" }),
+        ],
+      },
+    };
+
+    expect(clearSavingFlag(project).mediaLibrary.items.map((item) => item.isSaving))
+      .toEqual([false, undefined]);
+  });
+
+  it("returns the same project object when nothing is saving", () => {
+    const project = {
+      ...({ id: "project-1", mediaLibrary: {} } as unknown as Project),
+      mediaLibrary: { items: [mediaItem()] },
+    };
+
+    expect(clearSavingFlag(project)).toBe(project);
   });
 });

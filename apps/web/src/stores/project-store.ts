@@ -93,6 +93,7 @@ import {
   loadDirectoryHandle,
 } from "../services/media-storage";
 import {
+  clearSavingFlag,
   createMissingMediaItem,
   restoreMediaItem,
 } from "../utils/media-recovery";
@@ -1768,9 +1769,11 @@ export const useProjectStore = create<ProjectState>()(
 
         // Fix legacy projects where timeline.duration was never persisted
         const computedDuration = calculateTimelineDuration(project);
-        const fixedProject = computedDuration !== project.timeline.duration
-          ? { ...project, timeline: { ...project.timeline, duration: computedDuration } }
-          : project;
+        const fixedProject = clearSavingFlag(
+          computedDuration !== project.timeline.duration
+            ? { ...project, timeline: { ...project.timeline, duration: computedDuration } }
+            : project,
+        );
 
         syncProjectEffectsBridge(fixedProject, previousProject);
         syncProjectTransitionsBridge(fixedProject, previousProject);

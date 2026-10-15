@@ -1,4 +1,4 @@
-import type { MediaItem } from "@openreel/core";
+import type { MediaItem, Project } from "@openreel/core";
 
 export async function generateThumbnailFromBlob(
   blob: Blob,
@@ -90,6 +90,26 @@ export function createMissingMediaItem(item: MediaItem): MediaItem {
     waveformData: null,
     filmstripThumbnails: undefined,
     isPlaceholder: true,
+    isSaving: false,
+  };
+}
+
+/**
+ * `isSaving` is a session-scoped flag: it is only meaningful while this tab's
+ * write queue still owns the blob. A project serialized mid-commit can carry
+ * `isSaving: true` back in on load, where nothing will ever clear it, so the
+ * flag is dropped as part of loading.
+ */
+export function clearSavingFlag(project: Project): Project {
+  if (!project.mediaLibrary?.items?.some((item) => item.isSaving)) return project;
+  return {
+    ...project,
+    mediaLibrary: {
+      ...project.mediaLibrary,
+      items: project.mediaLibrary.items.map((item) =>
+        item.isSaving ? { ...item, isSaving: false } : item,
+      ),
+    },
   };
 }
 
@@ -130,5 +150,6 @@ export async function restoreMediaItem(
     waveformData: null,
     filmstripThumbnails: undefined,
     isPlaceholder: false,
+    isSaving: false,
   };
 }

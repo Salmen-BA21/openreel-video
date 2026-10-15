@@ -4,15 +4,19 @@ import type { MediaItem, Project } from "@openreel/core";
 import type { ProjectState } from "../project-store";
 import { createEmptyProject } from "./project-helpers";
 import { createMediaSlice } from "./media-slice";
+import type { MediaPersistJob } from "../../services/media-persist-queue";
 
-const { bridge, saveMediaBlob, warning } = vi.hoisted(() => ({
+const { bridge, mediaPersistQueue, deleteMediaBlob } = vi.hoisted(() => ({
   bridge: {
     isInitialized: vi.fn(() => true),
     importFile: vi.fn(),
     generateThumbnailsForMedia: vi.fn(async () => []),
   },
-  saveMediaBlob: vi.fn(async () => {}),
-  warning: vi.fn(),
+  mediaPersistQueue: {
+    enqueue: vi.fn<[MediaPersistJob], void>(),
+    cancel: vi.fn<[string], void>(),
+  },
+  deleteMediaBlob: vi.fn(async () => {}),
 }));
 
 vi.mock("../../bridges/media-bridge", () => ({
@@ -20,10 +24,9 @@ vi.mock("../../bridges/media-bridge", () => ({
   initializeMediaBridge: vi.fn(async () => {}),
 }));
 vi.mock("../../services/media-storage", () => ({
-  saveMediaBlob,
-  deleteMediaBlob: vi.fn(async () => {}),
+  deleteMediaBlob,
 }));
-vi.mock("../notification-store", () => ({ toast: { warning } }));
+vi.mock("../../services/media-persist-queue", () => ({ mediaPersistQueue }));
 
 const decodedAudio = () => ({
   success: true,
@@ -51,8 +54,9 @@ function deferred<T>() {
 function createMediaStore(initial: Project = createEmptyProject("Original")) {
   return createStore<ProjectState>((set, get) => ({
     project: initial,
+    actionExecutor: { execute: vi.fn(async () => ({ success: true })) },
     ...createMediaSlice(set, get),
-  } as ProjectState));
+  } as unknown as ProjectState));
 }
 
 function originalMedia(): MediaItem {
@@ -73,7 +77,8 @@ describe("Media slice asynchronous imports", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     bridge.importFile.mockReset();
-    saveMediaBlob.mockReset().mockResolvedValue(undefined);
+    mediaPersistQueue.enqueue.mockReset();
+    mediaPersistQueue.cancel.mockReset();
   });
 
   it("retains every concurrent import and edits made while files decode", async () => {
@@ -95,7 +100,7 @@ describe("Media slice asynchronous imports", () => {
     expect(store.getState().project.name).toBe("Edited while importing");
     expect(store.getState().project.mediaLibrary.items.map((item) => item.name))
       .toEqual(["second.wav", "first.wav"]);
-    expect(saveMediaBlob).toHaveBeenCalledTimes(2);
+    expect(mediaPersistQueue.enqueue).toHaveBeenCalledTimes(2);
   });
 
   it("does not reopen an old project when its media finishes importing", async () => {
@@ -109,7 +114,7 @@ describe("Media slice asynchronous imports", () => {
 
     expect((await importing).success).toBe(false);
     expect(store.getState().project).toBe(newProject);
-    expect(saveMediaBlob).not.toHaveBeenCalled();
+    expect(mediaPersistQueue.enqueue).not.toHaveBeenCalled();
   });
 
   it("persists replacement media and retains edits made while relinking", async () => {
@@ -130,11 +135,14 @@ describe("Media slice asynchronous imports", () => {
       blob: file,
       isPlaceholder: false,
     });
-    expect(saveMediaBlob).toHaveBeenCalledWith(
-      initial.id,
-      "existing-media",
-      file,
-      expect.objectContaining({ fileSize: file.size }),
+    expect(mediaPersistQueue.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectId: initial.id,
+        mediaId: "existing-media",
+        name: "relinked.wav",
+        blob: file,
+        metadata: expect.objectContaining({ fileSize: file.size }),
+      }),
     );
   });
 
@@ -153,7 +161,7 @@ describe("Media slice asynchronous imports", () => {
 
     expect((await replacing).success).toBe(false);
     expect(store.getState().project.mediaLibrary.items).toEqual([]);
-    expect(saveMediaBlob).not.toHaveBeenCalled();
+    expect(mediaPersistQueue.enqueue).not.toHaveBeenCalled();
   });
 
   it("keeps the most recently requested replacement when decoding completes out of order", async () => {
@@ -177,23 +185,59 @@ describe("Media slice asynchronous imports", () => {
     expect((await replacingOlder).success).toBe(false);
 
     expect(store.getState().project.mediaLibrary.items[0].name).toBe("newer.wav");
-    expect(saveMediaBlob).toHaveBeenCalledOnce();
+    expect(mediaPersistQueue.enqueue).toHaveBeenCalledOnce();
   });
 
-  it("warns when media is usable but cannot survive a reload", async () => {
+  it("returns the asset without waiting on the blob write", async () => {
     bridge.importFile.mockResolvedValueOnce(decodedAudio());
-    saveMediaBlob.mockRejectedValueOnce(new Error("Storage quota exceeded"));
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
     const store = createMediaStore();
 
-    const result = await store.getState().importMedia(new File(["a"], "clip.wav"));
+    const result = await store.getState().importMedia(new File(["a"], "big.mp4"));
 
     expect(result.success).toBe(true);
     expect(store.getState().project.mediaLibrary.items).toHaveLength(1);
-    expect(warning).toHaveBeenCalledWith(
-      "Media could not be saved in browser storage",
-      expect.stringContaining("clip.wav"),
+    expect(mediaPersistQueue.enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "big.mp4",
+        onSettled: expect.any(Function),
+      }),
     );
-    consoleError.mockRestore();
+  });
+
+  it("marks the asset as saving until the background write settles", async () => {
+    bridge.importFile.mockResolvedValueOnce(decodedAudio());
+    let settle!: (persisted: boolean) => void;
+    mediaPersistQueue.enqueue.mockImplementationOnce((job) => {
+      settle = job.onSettled!;
+    });
+    const store = createMediaStore();
+
+    await store.getState().importMedia(new File(["a"], "big.mp4"));
+    expect(store.getState().project.mediaLibrary.items[0].isSaving).toBe(true);
+
+    settle(true);
+    expect(store.getState().project.mediaLibrary.items[0].isSaving).toBe(false);
+  });
+
+  it("keeps the asset marked as saving when the write fails", async () => {
+    bridge.importFile.mockResolvedValueOnce(decodedAudio());
+    let settle!: (persisted: boolean) => void;
+    mediaPersistQueue.enqueue.mockImplementationOnce((job) => {
+      settle = job.onSettled!;
+    });
+    const store = createMediaStore();
+
+    await store.getState().importMedia(new File(["a"], "big.mp4"));
+    settle(false);
+
+    expect(store.getState().project.mediaLibrary.items[0].isSaving).toBe(true);
+  });
+
+  it("cancels a queued write when its asset is deleted", async () => {
+    const store = createMediaStore();
+
+    await store.getState().deleteMedia("existing-media");
+
+    expect(mediaPersistQueue.cancel).toHaveBeenCalledWith("existing-media");
   });
 });

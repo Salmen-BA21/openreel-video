@@ -3,8 +3,8 @@ import type { StoreApi } from "zustand";
 import type { Action, MediaItem } from "@openreel/core";
 import type { ProjectState } from "../project-store";
 import { getMediaBridge, initializeMediaBridge } from "../../bridges/media-bridge";
-import { saveMediaBlob, deleteMediaBlob } from "../../services/media-storage";
-import { toast } from "../notification-store";
+import { deleteMediaBlob } from "../../services/media-storage";
+import { mediaPersistQueue } from "../../services/media-persist-queue";
 
 type Get = StoreApi<ProjectState>["getState"];
 type Set = StoreApi<ProjectState>["setState"];
@@ -20,6 +20,25 @@ export type MediaSlice = Pick<
 
 export function createMediaSlice(set: Set, get: Get): MediaSlice {
   const replacementRequests = new Map<string, symbol>();
+
+  /** Flips `isSaving` once the background blob write settles. */
+  const setMediaSaving = (mediaId: string, isSaving: boolean): void => {
+    const { project } = get();
+    const items = project.mediaLibrary.items;
+    const index = items.findIndex((item) => item.id === mediaId);
+    if (index === -1) return;
+    const current = items[index];
+    if (Boolean(current.isSaving) === isSaving) return;
+    const updated = [...items];
+    updated[index] = { ...current, isSaving };
+    // Deliberately does not bump `modifiedAt`: this is a transient UI flag.
+    set({
+      project: {
+        ...project,
+        mediaLibrary: { ...project.mediaLibrary, items: updated },
+      },
+    });
+  };
 
   return {
     importMedia: async (file: File) => {
@@ -134,6 +153,7 @@ export function createMediaSlice(set: Set, get: Get): MediaSlice {
           waveformData: processedMedia.waveformData?.peaks || null,
           filmstripThumbnails:
             filmstripThumbnails.length > 0 ? filmstripThumbnails : undefined,
+          isSaving: true,
           sourceFile: {
             name: file.name,
             size: file.size,
@@ -163,20 +183,18 @@ export function createMediaSlice(set: Set, get: Get): MediaSlice {
 
         set({ project: updatedProject });
 
-        try {
-          await saveMediaBlob(
-            updatedProject.id,
-            newMediaItem.id,
-            file,
-            newMediaItem.metadata,
-          );
-        } catch (err) {
-          console.error("[ProjectStore] Failed to persist media blob:", err);
-          toast.warning(
-            "Media could not be saved in browser storage",
-            `Keep the original ${file.name} so you can relink it after reloading.`,
-          );
-        }
+        // Hand the blob write to the background queue: awaiting the full-blob
+        // IndexedDB commit here stalled clip placement on large imports.
+        mediaPersistQueue.enqueue({
+          projectId: updatedProject.id,
+          mediaId: newMediaItem.id,
+          name: file.name,
+          blob: file,
+          metadata: newMediaItem.metadata,
+          onSettled: (persisted) => {
+            if (persisted) setMediaSaving(newMediaItem.id, false);
+          },
+        });
 
         if (mediaType === "video" && !thumbnailUrl) {
           setTimeout(async () => {
@@ -243,6 +261,9 @@ export function createMediaSlice(set: Set, get: Get): MediaSlice {
       const result = await actionExecutor.execute(action, project);
       if (result.success) {
         set({ project: { ...project } });
+        // Drop any write still queued for this asset so it cannot land after
+        // the delete. An in-flight commit cannot be interrupted.
+        mediaPersistQueue.cancel(mediaId);
         deleteMediaBlob(mediaId).catch((err: unknown) =>
           console.warn("[ProjectStore] Failed to delete media blob:", err),
         );
@@ -364,6 +385,7 @@ export function createMediaSlice(set: Set, get: Get): MediaSlice {
           filmstripThumbnails:
             filmstripThumbnails.length > 0 ? filmstripThumbnails : undefined,
           isPlaceholder: false,
+          isSaving: true,
           sourceFile: {
             name: file.name,
             size: file.size,
@@ -399,20 +421,17 @@ export function createMediaSlice(set: Set, get: Get): MediaSlice {
           },
         });
 
-        try {
-          await saveMediaBlob(
-            currentProject.id,
-            updatedItem.id,
-            file,
-            updatedItem.metadata,
-          );
-        } catch (error) {
-          console.error("[ProjectStore] Failed to persist replacement media:", error);
-          toast.warning(
-            "Replacement media could not be saved in browser storage",
-            `Keep the original ${file.name} so you can relink it after reloading.`,
-          );
-        }
+        mediaPersistQueue.enqueue({
+          projectId: currentProject.id,
+          mediaId: updatedItem.id,
+          name: file.name,
+          blob: file,
+          metadata: updatedItem.metadata,
+          failureTitle: "Replacement media could not be saved in browser storage",
+          onSettled: (persisted) => {
+            if (persisted) setMediaSaving(mediaId, false);
+          },
+        });
 
         if (updatedItem.type === "video" && !updatedItem.thumbnailUrl) {
           setTimeout(async () => {

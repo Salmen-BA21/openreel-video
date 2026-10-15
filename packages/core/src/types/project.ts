@@ -70,6 +70,11 @@ export interface MediaItem {
   readonly sourceFile?: { name: string; size: number; lastModified: number; folder?: string };
   /** True while a background KieAI generation task is in progress */
   readonly isPending?: boolean;
+  /**
+   * True while the blob is still being written to browser storage. The asset is
+   * fully usable for editing; it just would not survive a reload yet.
+   */
+  readonly isSaving?: boolean;
   /** True when polling exhausted all retries — shows manual retry button */
   readonly kieaiError?: boolean;
   /** KieAI task ID used to poll for completion */
