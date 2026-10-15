@@ -9,10 +9,16 @@ import { ClipComponent } from "./ClipComponent";
 import { TextClipComponent } from "./TextClipComponent";
 import { TimeRuler } from "./TimeRuler";
 
+// `PointerEventInit` / `FrameRequestCallback` are TS-only DOM globals that
+// core eslint can't resolve — derive them from known runtime globals instead.
+type PointerEventInitLike = NonNullable<
+  ConstructorParameters<typeof PointerEvent>[1]
+>;
+
 class TestPointerEvent extends MouseEvent {
   readonly pointerId: number;
   readonly pointerType: string;
-  constructor(type: string, options: PointerEventInit = {}) {
+  constructor(type: string, options: PointerEventInitLike = {}) {
     super(type, options);
     this.pointerId = options.pointerId ?? 1;
     this.pointerType = options.pointerType ?? "touch";
@@ -35,7 +41,7 @@ const props = { clip, track, allTracks: [track], pixelsPerSecond: 50, scrollX: 0
   onSelect: vi.fn(), onMoveClip: vi.fn(), onSnapIndicator: noop };
 
 describe("touch timeline editing", () => {
-  const frames = new Map<number, FrameRequestCallback>();
+  const frames = new Map<number, Parameters<typeof requestAnimationFrame>[0]>();
   let nextFrame = 0;
   function flushFrame() {
     act(() => {
@@ -166,5 +172,42 @@ describe("touch timeline editing", () => {
     await act(async () => { fireEvent.pointerCancel(window, { pointerType: "touch", pointerId: 7 }); });
     fireEvent.pointerUp(window, { pointerType: "touch", pointerId: 7 });
     expect(end).toHaveBeenCalledTimes(1);
+  });
+
+  it("enters multi-select on a body long press and swallows the follow-up tap", () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const onLongPress = vi.fn();
+      const view = render(
+        <div>
+          <ClipComponent {...props} isSelected={false} onLongPress={onLongPress} />
+        </div>,
+      );
+      const body = view.getByRole("button", { name: /Select clip media/ });
+      fireEvent(body, new TestPointerEvent("pointerdown", { bubbles: true, cancelable: true, clientX: 50 }));
+      act(() => { vi.advanceTimersByTime(450); });
+      expect(onLongPress).toHaveBeenCalledWith(clip.id);
+
+      // The tap that completes the long press must not run a normal select.
+      fireEvent.click(body);
+      expect(props.onSelect).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leaves a short touch tap to the normal selection path", () => {
+    const onLongPress = vi.fn();
+    const view = render(
+      <div>
+        <ClipComponent {...props} isSelected={false} onLongPress={onLongPress} />
+      </div>,
+    );
+    const body = view.getByRole("button", { name: /Select clip media/ });
+    fireEvent(body, new TestPointerEvent("pointerdown", { bubbles: true, cancelable: true, clientX: 50 }));
+    fireEvent.pointerUp(window, { pointerId: 1, pointerType: "touch" });
+    fireEvent.click(body);
+    expect(onLongPress).not.toHaveBeenCalled();
+    expect(props.onSelect).toHaveBeenCalledWith(clip.id, false);
   });
 });

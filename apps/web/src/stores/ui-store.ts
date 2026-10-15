@@ -105,6 +105,9 @@ export interface UIState {
   deselect: (itemId: string) => void;
   clearSelection: () => void;
   isSelected: (itemId: string) => boolean;
+  /** Touch-only additive selection mode, entered by long-pressing a clip. */
+  clipMultiSelectMode: boolean;
+  setClipMultiSelectMode: (enabled: boolean) => void;
   getSelectedClipIds: () => string[];
   getSelectedTrackIds: () => string[];
   setSnapEnabled: (enabled: boolean) => void;
@@ -211,6 +214,7 @@ export const useUIStore = create<UIState>()(
       (set, get) => ({
         selectedItems: [],
         lastSelectedItem: null,
+        clipMultiSelectMode: false,
         effectApplicationClipId: null,
         effectApplicationLabel: null,
 
@@ -301,6 +305,10 @@ export const useUIStore = create<UIState>()(
             selectedItems: items,
             lastSelectedItem: items.length > 0 ? items[items.length - 1] : null,
           });
+        },
+
+        setClipMultiSelectMode: (enabled: boolean) => {
+          set({ clipMultiSelectMode: enabled });
         },
 
         deselect: (itemId: string) => {

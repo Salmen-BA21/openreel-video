@@ -37,6 +37,7 @@ import {
   Pencil,
   Waves,
   Loader2,
+  MoreHorizontal,
 } from "@/icons/lucide-compat";
 import { ToolcraftIconButton as IconButton } from "@openreel/ui";
 import {
@@ -48,7 +49,9 @@ import {
 import { useProjectStore } from "../../stores/project-store";
 import { useTimelineStore, ZOOM_PRESETS } from "../../stores/timeline-store";
 import { useCompactEditor } from "../../hooks/useCompactEditor";
+import { useEditorLayout } from "../../hooks/useEditorLayout";
 import { useUIStore } from "../../stores/ui-store";
+import type { SelectionItem } from "../../stores/ui-store";
 import { toast } from "../../stores/notification-store";
 import { useEngineStore } from "../../stores/engine-store";
 import { getPlaybackBridge } from "../../bridges/playback-bridge";
@@ -81,6 +84,7 @@ import {
   type TrackLayerFilter,
 } from "./timeline/track-layer-filter";
 import { getTrackDragAutoScrollDelta } from "./timeline/track-drag-auto-scroll";
+import { resolveClipTapSelection } from "./timeline/clip-selection";
 import {
   moveLinkedCaptions,
   trimLinkedCaptions,
@@ -104,7 +108,24 @@ const TIMELINE_SCROLLBAR_SIZE = 10;
 
 export const Timeline: React.FC = () => {
   const compact = useCompactEditor();
-  const headerWidth = compact ? 108 : 170;
+  const layout = useEditorLayout();
+  // Track rail narrows as the viewport shrinks (icons only on phones).
+  const headerWidth = layout === "phone" ? 92 : compact ? 108 : 170;
+  // Secondary toolbar tools live in an overflow panel on stacked layouts.
+  const [moreOpen, setMoreOpen] = useState(false);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const handleOutside = (event: PointerEvent) => {
+      if (
+        (event.target as HTMLElement | null)?.closest("[data-tl-more]")
+      ) {
+        return;
+      }
+      setMoreOpen(false);
+    };
+    document.addEventListener("pointerdown", handleOutside);
+    return () => document.removeEventListener("pointerdown", handleOutside);
+  }, [moreOpen]);
   const containerRef = useRef<HTMLDivElement>(null);
   const tracksRef = useRef<HTMLDivElement>(null);
   const trackHeadersRef = useRef<HTMLDivElement>(null);
@@ -275,6 +296,8 @@ export const Timeline: React.FC = () => {
     toggleSnap,
     timelineMaximized,
     toggleTimelineMaximized,
+    clipMultiSelectMode,
+    setClipMultiSelectMode,
   } = useUIStore();
   const selectedClipIds = useMemo(
     () => getSelectedClipIds(),
@@ -523,27 +546,16 @@ export const Timeline: React.FC = () => {
     }
   }, [playheadPosition, playbackState, pixelsPerSecond, scrollX, viewportWidth]);
 
-  const handleSelectClip = useCallback(
-    (clipId: string, addToSelection: boolean) => {
-      const isTextClip = allTextClips.some((tc) => tc.id === clipId);
-      if (isTextClip) {
-        const textClip = allTextClips.find((tc) => tc.id === clipId);
-        select(
-          { type: "text-clip", id: clipId, trackId: textClip?.trackId },
-          addToSelection,
-        );
-        return;
+  const buildClipSelectionItem = useCallback(
+    (clipId: string): SelectionItem => {
+      const textClip = allTextClips.find((tc) => tc.id === clipId);
+      if (textClip) {
+        return { type: "text-clip", id: clipId, trackId: textClip.trackId };
       }
-      const isShapeClip = allShapeClips.some((sc) => sc.id === clipId);
-      if (isShapeClip) {
-        const shapeClip = allShapeClips.find((sc) => sc.id === clipId);
-        select(
-          { type: "shape-clip", id: clipId, trackId: shapeClip?.trackId },
-          addToSelection,
-        );
-        return;
+      const shapeClip = allShapeClips.find((sc) => sc.id === clipId);
+      if (shapeClip) {
+        return { type: "shape-clip", id: clipId, trackId: shapeClip.trackId };
       }
-
       let trackId: string | undefined;
       for (const track of tracks) {
         if (track.clips.some((c) => c.id === clipId)) {
@@ -551,9 +563,36 @@ export const Timeline: React.FC = () => {
           break;
         }
       }
-      select({ type: "clip", id: clipId, trackId }, addToSelection);
+      return { type: "clip", id: clipId, trackId };
     },
-    [tracks, select, allTextClips, allShapeClips],
+    [tracks, allTextClips, allShapeClips],
+  );
+
+  const handleSelectClip = useCallback(
+    (clipId: string, addToSelection: boolean) => {
+      const ui = useUIStore.getState();
+      const next = resolveClipTapSelection(
+        ui.selectedItems,
+        buildClipSelectionItem(clipId),
+        { addToSelection, multiSelectMode: ui.clipMultiSelectMode },
+      );
+      ui.selectMultiple(next);
+      // Tapping away the last item leaves multi-select mode.
+      if (ui.clipMultiSelectMode && next.length === 0) {
+        ui.setClipMultiSelectMode(false);
+      }
+    },
+    [buildClipSelectionItem],
+  );
+
+  const handleClipLongPress = useCallback(
+    (clipId: string) => {
+      const ui = useUIStore.getState();
+      // Long-press means "include this clip" — add it without clearing others.
+      ui.select(buildClipSelectionItem(clipId), true);
+      ui.setClipMultiSelectMode(true);
+    },
+    [buildClipSelectionItem],
   );
 
   const handleSelectTransition = useCallback(
@@ -645,7 +684,8 @@ export const Timeline: React.FC = () => {
       await deleteTimelineItem(store, id);
     }
     clearSelection();
-  }, [selectedClipIds, clearSelection]);
+    setClipMultiSelectMode(false);
+  }, [selectedClipIds, clearSelection, setClipMultiSelectMode]);
 
   const handleDuplicate = useCallback(async () => {
     if (selectedClipIds.length === 0) return;
@@ -685,7 +725,8 @@ export const Timeline: React.FC = () => {
       return;
     }
     clearSelection();
-  }, [clearSelection]);
+    setClipMultiSelectMode(false);
+  }, [clearSelection, setClipMultiSelectMode]);
 
   const handleBoxSelectionStart = useCallback(
     (e: React.MouseEvent) => {
@@ -1007,7 +1048,7 @@ export const Timeline: React.FC = () => {
       onClick={onClick}
       disabled={disabled}
       data-tip-bottom={title}
-      className={`relative grid place-items-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
+      className={`tl-tool relative grid place-items-center transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
         active ? "text-accent" : "text-fg-muted hover:text-fg-2"
       }`}
     >
@@ -1022,7 +1063,11 @@ export const Timeline: React.FC = () => {
       className="h-full bg-tl-bg flex flex-col min-h-0 relative overflow-hidden"
     >
       {/* ── Timeline toolbar (mock: 48px line-icon tools + emerald zoom slider) ── */}
-      <div className="flex items-center h-12 px-4 gap-4 bg-bg-1 border-b border-border shrink-0 relative z-50">
+      <div
+        className="tl-toolbar flex items-center h-12 px-4 gap-4 bg-bg-1 border-b border-border shrink-0 relative z-50"
+        data-tl-more={moreOpen ? "open" : "off"}
+      >
+        <div className="tl-tools-primary">
         <TLTool onClick={undo} disabled={!canUndo()} title="Undo (⌘Z)">
           <Undo2 size={16} aria-hidden />
         </TLTool>
@@ -1067,6 +1112,10 @@ export const Timeline: React.FC = () => {
         >
           <Copy size={16} aria-hidden />
         </TLTool>
+        </div>
+
+        {/* Secondary tools — collapse into a "more" panel on stacked layouts */}
+        <div className="tl-tools-overflow">
         <TLTool
           onClick={handleRippleDelete}
           disabled={!canRippleDelete}
@@ -1490,7 +1539,71 @@ export const Timeline: React.FC = () => {
             </TLTool>
           </div>
         </div>
+        </div>
+
+        {/* More — exposes the secondary tools on stacked layouts */}
+        <button
+          type="button"
+          className="tl-more"
+          aria-label="More timeline tools"
+          aria-expanded={moreOpen}
+          onClick={() => setMoreOpen((open) => !open)}
+        >
+          <MoreHorizontal size={18} aria-hidden />
+        </button>
       </div>
+
+      {clipMultiSelectMode && (
+        <div
+          className="tl-multiselect"
+          role="toolbar"
+          aria-label="Multi-select actions"
+        >
+          <span className="tl-multiselect-count">
+            {selectedClipIds.length} selected
+          </span>
+          <div className="tl-multiselect-actions">
+            <button
+              type="button"
+              className="tl-multiselect-action"
+              onClick={handleAutoSync}
+              disabled={!autoSyncPair || autoSyncState.isProcessing}
+            >
+              {autoSyncState.isProcessing ? (
+                <Loader2 size={16} className="animate-spin" aria-hidden />
+              ) : (
+                <Waves size={16} aria-hidden />
+              )}
+              Sync
+            </button>
+            <button
+              type="button"
+              className="tl-multiselect-action"
+              onClick={handleDuplicate}
+              disabled={selectedClipIds.length === 0}
+            >
+              <Copy size={16} aria-hidden />
+              Duplicate
+            </button>
+            <button
+              type="button"
+              className="tl-multiselect-action"
+              onClick={handleDelete}
+              disabled={selectedClipIds.length === 0}
+            >
+              <Trash2 size={16} aria-hidden />
+              Delete
+            </button>
+            <button
+              type="button"
+              className="tl-multiselect-action tl-multiselect-done"
+              onClick={() => setClipMultiSelectMode(false)}
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
 
       <div
         ref={containerRef}
@@ -1729,6 +1842,7 @@ export const Timeline: React.FC = () => {
                   trackHeights={trackHeightsMap}
                   timelineRef={tracksRef}
                   onSelectClip={handleSelectClip}
+                  onLongPressClip={handleClipLongPress}
                   onDropMedia={handleDropMedia}
                   onMoveClip={handleMoveClip}
                   onSnapIndicator={handleSnapIndicator}

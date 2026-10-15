@@ -35,6 +35,8 @@ interface TrackLaneProps {
   trackHeights: Map<string, number>;
   timelineRef: React.RefObject<HTMLDivElement | null>;
   onSelectClip: (clipId: string, addToSelection: boolean) => void;
+  /** Touch-only: long-pressing a media clip body enters multi-select mode. */
+  onLongPressClip?: (clipId: string) => void;
   onDropMedia: (trackId: string, mediaId: string, startTime: number) => void;
   onMoveClip: (
     clipId: string,
@@ -83,6 +85,7 @@ export const TrackLane: React.FC<TrackLaneProps> = React.memo(function TrackLane
   trackHeights,
   timelineRef,
   onSelectClip,
+  onLongPressClip,
   onDropMedia,
   onMoveClip,
   onMoveTextClip,
@@ -340,6 +343,7 @@ export const TrackLane: React.FC<TrackLaneProps> = React.memo(function TrackLane
               onMoveClip={onMoveClip}
               onSnapIndicator={onSnapIndicator}
               onTrimClip={onTrimClip}
+              onLongPress={onLongPressClip}
             />
           ))}
         {textClips.map((textClip) => (

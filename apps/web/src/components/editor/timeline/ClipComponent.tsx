@@ -1,4 +1,5 @@
 import { useTimelineTouchGesture, listenTimelineGesture } from "./touch-gestures";
+import { useLongPress } from "./use-long-press";
 import { TimelineTouchMoveHandle } from "./TimelineTouchMoveHandle";
 import React, { useRef, useState, useEffect, useCallback } from "react";
 import { ToolcraftContextMenu as ContextMenu } from "@openreel/ui";
@@ -44,6 +45,8 @@ interface ClipComponentProps {
     edge: "left" | "right",
     newTime: number,
   ) => void;
+  /** Touch-only: long-pressing the clip body enters multi-select. */
+  onLongPress?: (clipId: string) => void;
 }
 
 const AUTO_SCROLL_THRESHOLD = 80;
@@ -64,6 +67,7 @@ export const ClipComponent: React.FC<ClipComponentProps> = ({
   onMoveClip,
   onSnapIndicator,
   onTrimClip,
+  onLongPress,
 }) => {
   const mediaItem = useProjectStore((state) => state.getMediaItem(clip.mediaId));
   const snapSettings = useUIStore((state) => state.snapSettings);
@@ -128,6 +132,9 @@ export const ClipComponent: React.FC<ClipComponentProps> = ({
   });
   const clipRef = useRef<HTMLDivElement>(null);
   const touchGesture = useTimelineTouchGesture();
+  const longPress = useLongPress(() => onLongPress?.(clip.id), {
+    enabled: Boolean(onLongPress),
+  });
   const contextMenuItems = useClipContextMenuItems({ clip, track });
   const moveCommitRafRef = useRef<number | null>(null);
   const pendingCommitRef = useRef<(() => void) | null>(null);
@@ -151,6 +158,7 @@ export const ClipComponent: React.FC<ClipComponentProps> = ({
 
   const handleClick = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
+    if (longPress.consumeLongPress()) return;
     if (isDragging || isPendingDrag) return;
     e.stopPropagation();
     onSelect(clip.id, e.shiftKey || e.metaKey);
@@ -785,7 +793,10 @@ export const ClipComponent: React.FC<ClipComponentProps> = ({
           aria-pressed={isSelected}
           onClick={handleClick}
           data-timeline-clip
-          onPointerDown={touchGesture.bodyPointerDown}
+          onPointerDown={(event) => {
+            touchGesture.bodyPointerDown(event);
+            longPress.onPointerDown(event);
+          }}
           onMouseDown={handleMouseDown}
           onKeyDown={(event) => {
             if (track.locked || (event.key !== "Enter" && event.key !== " ")) return;
