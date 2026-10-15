@@ -212,9 +212,15 @@ export const TrackLane: React.FC<TrackLaneProps> = React.memo(function TrackLane
                 await placeMediaClip(newItem.id, track.id, snapResult.time);
                 toast.success(`Added to ${track.name}`, file.name);
               }
+            } else {
+              toast.error(`Could not import ${file.name}`, result.error?.message);
             }
           } catch (err) {
             console.error("[TrackLane] External file drop failed:", err);
+            toast.error(
+              `Could not import ${file.name}`,
+              err instanceof Error ? err.message : undefined,
+            );
           }
         }
         return;

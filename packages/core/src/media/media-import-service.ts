@@ -11,6 +11,7 @@ import {
   getMediaEngine,
   isSupportedFormat,
   inferMediaType,
+  resolveMimeType,
 } from "./mediabunny-engine";
 import {
   FFmpegFallback,
@@ -129,7 +130,7 @@ export class MediaImportService {
 
     try {
       const metadata = await this.mediaEngine.extractMetadata(file);
-      const mediaType = inferMediaType(file.type);
+      const mediaType = inferMediaType(resolveMimeType(file));
 
       if (!mediaType) {
         return {
@@ -415,12 +416,13 @@ export class MediaImportService {
     format: string | null;
     error?: string;
   }> {
-    if (!isSupportedFormat(file.type)) {
+    const mimeType = resolveMimeType(file);
+    if (!isSupportedFormat(mimeType)) {
       return {
         supported: false,
         format: null,
         error: `Unsupported format: ${
-          file.type || "unknown"
+          mimeType || "unknown"
         }. Supported formats: MP4, WebM, MOV, MP3, WAV, AAC, JPG, PNG, WebP`,
       };
     }

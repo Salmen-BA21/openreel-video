@@ -1620,9 +1620,15 @@ export const Timeline: React.FC = () => {
                           toast.success(`Added to ${track.name}`, file.name);
                         }
                       }
+                    } else {
+                      toast.error(`Could not import ${file.name}`, result.error?.message);
                     }
                   } catch (err) {
                     console.error("[Timeline] External file drop failed:", err);
+                    toast.error(
+                      `Could not import ${file.name}`,
+                      err instanceof Error ? err.message : undefined,
+                    );
                   }
                 }
                 return;

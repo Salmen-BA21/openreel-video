@@ -57,6 +57,53 @@ export function inferMediaType(
   if (SUPPORTED_IMAGE_FORMATS.includes(baseMimeType)) return "image";
   return null;
 }
+
+/**
+ * MIME types the browser reports are unreliable. Windows in particular gives an
+ * empty `file.type` for `.MOV`, so a file can be rejected before it is ever
+ * opened. Map well-known extensions to their canonical MIME type so format
+ * checks fall back to the filename when the browser has nothing to say.
+ */
+const EXTENSION_MIME_TYPES: Record<string, string> = {
+  mp4: "video/mp4",
+  m4v: "video/mp4",
+  mov: "video/quicktime",
+  qt: "video/quicktime",
+  webm: "video/webm",
+  mkv: "video/x-matroska",
+  mp3: "audio/mpeg",
+  wav: "audio/wav",
+  aac: "audio/aac",
+  m4a: "audio/aac",
+  ogg: "audio/ogg",
+  oga: "audio/ogg",
+  flac: "audio/flac",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  gif: "image/gif",
+};
+
+function extensionOf(file: File | Blob): string | null {
+  if (!("name" in file) || typeof file.name !== "string") return null;
+  const dot = file.name.lastIndexOf(".");
+  if (dot < 0 || dot === file.name.length - 1) return null;
+  return file.name.slice(dot + 1).toLowerCase();
+}
+
+/**
+ * The MIME type to validate against: the browser's if it recognised the file,
+ * otherwise one derived from the extension.
+ */
+export function resolveMimeType(file: File | Blob): string {
+  const browserType = file.type.split(";")[0].trim();
+  if (browserType && browserType !== "application/octet-stream") {
+    return browserType;
+  }
+  const extension = extensionOf(file);
+  return (extension && EXTENSION_MIME_TYPES[extension]) || browserType;
+}
 type MediaBunnyInput = {
   computeDuration(): Promise<number>;
   getMimeType(): Promise<string>;
@@ -310,7 +357,7 @@ export class MediaBunnyEngine {
     format: string | null;
     error?: string;
   }> {
-    const mimeType = file.type;
+    const mimeType = resolveMimeType(file);
     if (!isSupportedFormat(mimeType)) {
       return {
         supported: false,

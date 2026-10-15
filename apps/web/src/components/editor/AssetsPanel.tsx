@@ -45,6 +45,9 @@ const formatDuration = (seconds: number): string => {
     .padStart(2, "0")}`;
 };
 
+/** How many files importMedia calls run at once when several are dropped. */
+const IMPORT_CONCURRENCY = 3;
+
 /**
  * Media Item Thumbnail Component
  * Shows thumbnail with metadata below (not overlaid)
@@ -418,6 +421,15 @@ const MediaThumbnail: React.FC<{
             {formatResolution() && <span>{formatResolution()}</span>}
             {(item.metadata?.duration || formatResolution()) && formatFileSize(item.metadata?.fileSize) && <span>•</span>}
             {formatFileSize(item.metadata?.fileSize) && <span>{formatFileSize(item.metadata?.fileSize)}</span>}
+            {item.isSaving && (
+              <span
+                className="flex items-center gap-1"
+                title="Saving to browser storage — the clip is ready to edit"
+              >
+                <span className="h-2 w-2 inline-block animate-spin rounded-full border border-current border-t-transparent" />
+                Saving
+              </span>
+            )}
           </div>
         </div>
 
@@ -550,6 +562,17 @@ const MediaThumbnail: React.FC<{
           <div className="absolute top-1 left-1 px-1.5 py-0.5 bg-yellow-500 rounded text-[8px] text-black font-bold flex items-center gap-1">
             <AlertTriangle size={10} />
             Missing
+          </div>
+        )}
+
+        {/* Still writing the blob to browser storage */}
+        {!item.kieaiError && !item.isPending && !item.isPlaceholder && item.isSaving && (
+          <div
+            className="absolute top-1 left-1 px-1.5 py-0.5 bg-black/70 rounded text-[8px] text-white font-bold flex items-center gap-1"
+            title="Saving to browser storage — the clip is ready to edit"
+          >
+            <div className="h-2 w-2 animate-spin rounded-full border border-white border-t-transparent" />
+            Saving
           </div>
         )}
 
@@ -704,25 +727,49 @@ export const AssetsPanel: React.FC = () => {
 
       setIsImporting(true);
       const fileArray = Array.from(files);
+      const total = fileArray.length;
 
-      try {
-        for (let i = 0; i < fileArray.length; i++) {
-          const file = fileArray[i];
-          setImportProgress(
-            `Importing ${file.name} (${i + 1}/${fileArray.length})...`,
-          );
+      // Import a few files at a time. Each import now only waits on the cheap
+      // metadata probe (the blob write happens in the background), so batching
+      // beats importing large files one after another.
+      let nextIndex = 0;
+      let completed = 0;
 
-          const result = await importMedia(file);
-
-          // If it's a video with audio, extract audio to separate track
-          if (result.success && file.type.startsWith("video/")) {
-            setImportProgress(`Extracting audio from ${file.name}...`);
-            // Audio extraction is handled by the importMedia function
-            // The audio track is created automatically when adding to timeline
+      const importNext = async (): Promise<void> => {
+        while (nextIndex < fileArray.length) {
+          const index = nextIndex++;
+          const file = fileArray[index];
+          setImportProgress(`Importing ${file.name} (${index + 1}/${total})...`);
+          try {
+            const result = await importMedia(file);
+            if (!result.success) {
+              console.error(
+                `[AssetsPanel] Import failed for ${file.name}:`,
+                result.error,
+              );
+              toast.error(`Could not import ${file.name}`, result.error?.message);
+            }
+          } catch (error) {
+            console.error(`[AssetsPanel] Import failed for ${file.name}:`, error);
+            toast.error(
+              `Could not import ${file.name}`,
+              error instanceof Error ? error.message : undefined,
+            );
+          } finally {
+            completed += 1;
+            if (completed < total) {
+              setImportProgress(`Imported ${completed}/${total} files...`);
+            }
           }
         }
-      } catch (error) {
-        console.error("Import failed:", error);
+      };
+
+      try {
+        await Promise.all(
+          Array.from({ length: Math.min(IMPORT_CONCURRENCY, total) }, () =>
+            importNext(),
+          ),
+        );
       } finally {
         setIsImporting(false);
         setImportProgress("");
@@ -757,8 +804,10 @@ export const AssetsPanel: React.FC = () => {
               })
           : [];
 
-      await Promise.all(handlePromises);
-      handleFileImport(droppedFiles);
+      // Handle capture is best-effort recovery for relinking — never let it
+      // delay the import itself.
+      void Promise.allSettled(handlePromises);
+      void handleFileImport(droppedFiles);
     },
     [handleFileImport],
   );
