@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Image as ImageIcon, Film, Music, Plus, Upload, Trash2,
   Square, Circle, Triangle, Star, ArrowRight, Hexagon, FileCode, AlertTriangle,
@@ -49,11 +49,20 @@ const formatDuration = (seconds: number): string => {
 const IMPORT_CONCURRENCY = 3;
 
 /**
+ * Accepted file types for media import. The explicit extensions matter on iOS:
+ * the Files picker filters by `accept`, and without audio extensions MP3/WAV
+ * files can appear unavailable. Keep the wildcards for desktop browsers that
+ * use them to shorten the picker's type list.
+ */
+const MEDIA_ACCEPT =
+  "video/*,audio/*,image/*,.mp4,.m4v,.mov,.webm,.mkv,.mp3,.wav,.aac,.m4a,.ogg,.oga,.flac,.jpg,.jpeg,.png,.webp,.gif";
+
+/**
  * Media Item Thumbnail Component
  * Shows thumbnail with metadata below (not overlaid)
  */
 type MediaViewMode = "large" | "small" | "list";
-type AssetsTab =
+export type AssetsTab =
   | "media"
   | "text"
   | "graphics"
@@ -651,9 +660,15 @@ const LoadingIndicator: React.FC<{ message: string }> = ({ message }) => (
   </div>
 );
 
-export const AssetsPanel: React.FC = () => {
+export interface AssetsPanelProps {
+  /** Tab requested by an external launcher (the bottom tool dock). */
+  activeTab?: AssetsTab;
+}
+
+export const AssetsPanel: React.FC<AssetsPanelProps> = ({ activeTab: requestedTab }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [activeTab, setActiveTabRaw] = useState<AssetsTab>("media");
+  const [activeTab, setActiveTabRaw] = useState<AssetsTab>(requestedTab ?? "media");
+  const lastRequestedTab = useRef<AssetsTab>(requestedTab ?? "media");
   const ttsHasUnsaved = useTtsAudioStore((s) => s.generatedAudio !== null && !s.isAudioSaved);
   const playheadPosition = useTimelineStore((state) => state.playheadPosition);
   const selectedIds = useUIStore((state) => state.selectedItems);
@@ -664,6 +679,13 @@ export const AssetsPanel: React.FC = () => {
     }
     setActiveTabRaw(tab);
   }, [activeTab, ttsHasUnsaved]);
+
+  // External launcher (tool dock) asked for a different tab — apply it once.
+  useEffect(() => {
+    if (!requestedTab || requestedTab === lastRequestedTab.current) return;
+    lastRequestedTab.current = requestedTab;
+    setActiveTab(requestedTab);
+  }, [requestedTab, setActiveTab]);
 
   const [isDragOver, setIsDragOver] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -842,7 +864,7 @@ export const AssetsPanel: React.FC = () => {
     async (itemId: string) => {
       const input = document.createElement("input");
       input.type = "file";
-      input.accept = "video/*,audio/*,image/*";
+      input.accept = MEDIA_ACCEPT;
       input.onchange = async (e) => {
         const file = (e.target as HTMLInputElement).files?.[0];
         if (file) {
@@ -1575,10 +1597,10 @@ export const AssetsPanel: React.FC = () => {
   return (
     <div
       data-tour="assets"
-      className="w-full h-full bg-bg-1 overflow-hidden flex flex-row relative"
+      className="assets-shell w-full h-full bg-bg-1 overflow-hidden flex flex-row relative"
     >
       {/* ── Vertical tool rail (icon + label, left) ───────────── */}
-      <div className="flex flex-col items-center gap-1 px-0 py-[14px] border-r border-border bg-bg-1 overflow-y-auto scrollbar-none shrink-0 w-[92px]">
+      <div className="assets-rail flex flex-col items-center gap-1 px-0 py-[14px] border-r border-border bg-bg-1 overflow-y-auto scrollbar-none shrink-0 w-[92px]">
         {ASSETS_TABS.map((tab) => {
           const Icon = TAB_ICONS[tab.value];
           const isActive = activeTab === tab.value;
@@ -1590,7 +1612,7 @@ export const AssetsPanel: React.FC = () => {
               aria-pressed={isActive}
               title={tab.label}
               onClick={() => setActiveTab(tab.value)}
-              className={`group flex h-16 w-[68px] shrink-0 flex-col items-center justify-center gap-1 rounded-[10px] px-1 py-2 text-[10px] leading-tight tracking-tight transition-colors ${
+              className={`assets-tab group flex h-16 w-[68px] shrink-0 flex-col items-center justify-center gap-1 rounded-[10px] px-1 py-2 text-[10px] leading-tight tracking-tight transition-colors ${
                 isActive
                   ? "bg-selected text-accent font-semibold"
                   : "text-fg-muted font-medium"
@@ -1615,7 +1637,7 @@ export const AssetsPanel: React.FC = () => {
           ref={fileInputRef}
           type="file"
           aria-label="Import media"
-          accept="video/*,audio/*,image/*"
+          accept={MEDIA_ACCEPT}
           multiple
           className="hidden"
           onChange={(event) => {

@@ -454,7 +454,7 @@ export function AssetPanel({ composition }: AssetPanelProps): JSX.Element {
         <span className="text-[18px] font-bold text-fg">Assets</span>
         <div className="flex items-center gap-1">
           <ToolcraftFileDropControl
-            accept="image/*,video/*,audio/*"
+            accept="image/*,video/*,audio/*,.mp4,.m4v,.mov,.webm,.mkv,.mp3,.wav,.aac,.m4a,.ogg,.oga,.flac,.jpg,.jpeg,.png,.webp,.gif"
             label={isImportingMedia ? "Importing…" : "Import Media"}
             icon={<Upload size={14} aria-hidden />}
             onChange={handleMediaInputChange}

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { MediaImportService } from "./media-import-service";
-import { inferMediaType, resolveMimeType } from "./mediabunny-engine";
+import { inferMediaType, isSupportedFormat, normalizeMimeType, resolveMimeType } from "./mediabunny-engine";
 import type { MediaBunnyEngine } from "./mediabunny-engine";
 import type { FFmpegFallback } from "./ffmpeg-fallback";
 
@@ -59,11 +59,43 @@ describe("inferMediaType", () => {
   });
 });
 
+/**
+ * Safari and iOS report some audio containers with non-standard MIME types.
+ * A WAV picked from the Files app arrives as `audio/x-wav`, and `.m4a` as
+ * `audio/x-m4a`; both used to fail the supported-format check and be rejected.
+ */
+describe("browser MIME aliases", () => {
+  it("normalises Safari's audio aliases to canonical types", () => {
+    expect(normalizeMimeType("audio/x-wav")).toBe("audio/wav");
+    expect(normalizeMimeType("audio/wave")).toBe("audio/wav");
+    expect(normalizeMimeType("audio/vnd.wave")).toBe("audio/wav");
+    expect(normalizeMimeType("audio/x-m4a")).toBe("audio/mp4");
+    expect(normalizeMimeType("audio/mpeg; codecs=mp3")).toBe("audio/mpeg");
+  });
+
+  it("treats the aliases as supported audio", () => {
+    expect(isSupportedFormat("audio/x-wav")).toBe(true);
+    expect(inferMediaType("audio/x-wav")).toBe("audio");
+    expect(inferMediaType("audio/x-m4a")).toBe("audio");
+  });
+
+  it("resolves a Safari-reported WAV to the canonical type", () => {
+    expect(resolveMimeType(fileNamed("voice.wav", "audio/x-wav"))).toBe("audio/wav");
+  });
+});
+
 describe("MediaImportService.validateFormat", () => {
   it("accepts an extension-only MOV instead of rejecting it as unknown", async () => {
     const result = await service.validateFormat(fileNamed("2025_06_13_IMG_0512.MOV"));
     expect(result.supported).toBe(true);
     expect(engine.validateFormat).toHaveBeenCalled();
+  });
+
+  it("accepts a WAV that Safari reports as audio/x-wav", async () => {
+    const result = await service.validateFormat(
+      fileNamed("voice-memo.wav", "audio/x-wav"),
+    );
+    expect(result.supported).toBe(true);
   });
 
   it("still rejects a genuinely unsupported extension", async () => {

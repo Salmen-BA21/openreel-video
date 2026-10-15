@@ -26,6 +26,8 @@ export const SUPPORTED_AUDIO_FORMATS = [
   "audio/mpeg",
   "audio/mp3",
   "audio/wav",
+  "audio/x-wav",
+  "audio/mp4",
   "audio/ogg",
   "audio/aac",
   "audio/flac",
@@ -39,8 +41,38 @@ export const SUPPORTED_IMAGE_FORMATS = [
   "image/gif",
 ];
 
+/**
+ * Browsers disagree on the MIME type for the same container. Safari (and iOS
+ * in particular) reports WAV as `audio/x-wav`/`audio/wave`/`audio/vnd.wave`,
+ * and can report `.m4a` as `audio/x-m4a`. Normalise those aliases to the
+ * canonical type the engine accepts so audio files are not rejected outright.
+ */
+const MIME_ALIASES: Record<string, string> = {
+  "audio/x-wav": "audio/wav",
+  "audio/wave": "audio/wav",
+  "audio/vnd.wave": "audio/wav",
+  "audio/x-pn-wav": "audio/wav",
+  "audio/x-mp3": "audio/mpeg",
+  "audio/mp3": "audio/mpeg",
+  "audio/x-m4a": "audio/mp4",
+  "audio/m4a": "audio/mp4",
+  "audio/x-aac": "audio/aac",
+  "audio/aacp": "audio/aac",
+  "audio/x-flac": "audio/flac",
+  "audio/opus": "audio/ogg",
+  "audio/x-ogg": "audio/ogg",
+  "audio/oga": "audio/ogg",
+  "video/x-m4v": "video/mp4",
+};
+
+/** Canonical, lower-cased MIME type with parameters and aliases resolved. */
+export function normalizeMimeType(mimeType: string): string {
+  const baseMimeType = mimeType.split(";")[0].trim().toLowerCase();
+  return MIME_ALIASES[baseMimeType] ?? baseMimeType;
+}
+
 export function isSupportedFormat(mimeType: string): boolean {
-  const baseMimeType = mimeType.split(";")[0].trim();
+  const baseMimeType = normalizeMimeType(mimeType);
   return (
     SUPPORTED_VIDEO_FORMATS.includes(baseMimeType) ||
     SUPPORTED_AUDIO_FORMATS.includes(baseMimeType) ||
@@ -51,7 +83,7 @@ export function isSupportedFormat(mimeType: string): boolean {
 export function inferMediaType(
   mimeType: string,
 ): "video" | "audio" | "image" | null {
-  const baseMimeType = mimeType.split(";")[0].trim();
+  const baseMimeType = normalizeMimeType(mimeType);
   if (SUPPORTED_VIDEO_FORMATS.includes(baseMimeType)) return "video";
   if (SUPPORTED_AUDIO_FORMATS.includes(baseMimeType)) return "audio";
   if (SUPPORTED_IMAGE_FORMATS.includes(baseMimeType)) return "image";
@@ -99,7 +131,7 @@ function extensionOf(file: File | Blob): string | null {
 export function resolveMimeType(file: File | Blob): string {
   const browserType = file.type.split(";")[0].trim();
   if (browserType && browserType !== "application/octet-stream") {
-    return browserType;
+    return normalizeMimeType(browserType);
   }
   const extension = extensionOf(file);
   return (extension && EXTENSION_MIME_TYPES[extension]) || browserType;
