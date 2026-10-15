@@ -2,6 +2,7 @@ import React from "react";
 import { useProjectStore } from "../../../../stores/project-store";
 import {
   AutoCutSilenceSection,
+  AutoSyncSection,
   AudioTextSyncPanel,
   NoiseReductionSection,
   AudioEffectsSection,
@@ -91,6 +92,11 @@ export const AudioTab: React.FC<AudioTabProps> = ({
           defaultOpen={false}
         >
           <AutoCutSilenceSection clipId={clipId} />
+        </InspectorSection>
+      )}
+      {clipType === "video" && showAudioEffects && (
+        <InspectorSection title="Auto Sync" sectionId="auto-sync" defaultOpen={false}>
+          <AutoSyncSection clipId={clipId} />
         </InspectorSection>
       )}
       {clipType === "audio" && (

@@ -35,6 +35,8 @@ import {
   Volume2,
   VolumeX,
   Pencil,
+  Waves,
+  Loader2,
 } from "@/icons/lucide-compat";
 import { ToolcraftIconButton as IconButton } from "@openreel/ui";
 import {
@@ -50,6 +52,11 @@ import { useUIStore } from "../../stores/ui-store";
 import { toast } from "../../stores/notification-store";
 import { useEngineStore } from "../../stores/engine-store";
 import { getPlaybackBridge } from "../../bridges/playback-bridge";
+import {
+  formatSyncOffset,
+  getAutoSyncBridge,
+  type AutoSyncState,
+} from "../../bridges/auto-sync-bridge";
 import { trackHasAudioItems, trackHasVisualItems } from "@openreel/core";
 import {
   deleteTimelineItem,
@@ -288,6 +295,50 @@ export const Timeline: React.FC = () => {
   const canRippleDelete =
     selectedMediaClipIds.length > 0 &&
     selectedMediaClipIds.length === selectedClipIds.length;
+
+  // ── Auto Synchronization (Filmora-style one-click sync) ──
+  const [autoSyncState, setAutoSyncState] = useState<AutoSyncState>(() =>
+    getAutoSyncBridge().getState(),
+  );
+  useEffect(() => getAutoSyncBridge().subscribe(setAutoSyncState), []);
+  const autoSyncPair = useMemo(() => {
+    const mediaItems = useProjectStore.getState().getMediaItem;
+    const onTimeline = selectedMediaClipIds;
+    if (onTimeline.length !== 2) return null;
+    const typeById = new Map<string, string>();
+    for (const track of tracks) {
+      for (const clip of track.clips) {
+        typeById.set(clip.id, mediaItems(clip.mediaId)?.type ?? "");
+      }
+    }
+    let videoId: string | null = null;
+    let audioId: string | null = null;
+    for (const clipId of onTimeline) {
+      const type = typeById.get(clipId);
+      if (type === "video" && videoId === null) videoId = clipId;
+      else if (type === "audio" && audioId === null) audioId = clipId;
+      else return null; // more than one of a kind, or unsupported clip type
+    }
+    return videoId && audioId ? { target: videoId, reference: audioId } : null;
+  }, [selectedMediaClipIds, tracks]);
+  const handleAutoSync = useCallback(async () => {
+    if (!autoSyncPair || autoSyncState.isProcessing) return;
+    const outcome = await getAutoSyncBridge().syncPair(
+      autoSyncPair.target,
+      autoSyncPair.reference,
+    );
+    if (outcome.ok && outcome.result) {
+      toast.success(
+        "Auto Synchronized",
+        `Offset: ${formatSyncOffset(outcome.result.syncTime)} (score ${outcome.result.score.toFixed(2)}) — Ctrl+Z to undo.`,
+      );
+    } else {
+      toast.error(
+        "Auto Synchronization Failed",
+        outcome.error ?? "Could not synchronize the selected clips.",
+      );
+    }
+  }, [autoSyncPair, autoSyncState.isProcessing]);
 
   const { getTitleEngine, getGraphicsEngine } = useEngineStore();
   const titleEngine = getTitleEngine();
@@ -1022,6 +1073,22 @@ export const Timeline: React.FC = () => {
           title="Ripple delete (⇧Del)"
         >
           <Delete size={16} aria-hidden />
+        </TLTool>
+
+        <TLTool
+          onClick={handleAutoSync}
+          disabled={!autoSyncPair || autoSyncState.isProcessing}
+          title={
+            autoSyncPair
+              ? "Auto Synchronization — automatically synchronize audio and video"
+              : "Auto Synchronization — select one video and one audio clip (Ctrl+click)"
+          }
+        >
+          {autoSyncState.isProcessing ? (
+            <Loader2 size={16} className="animate-spin" aria-hidden />
+          ) : (
+            <Waves size={16} aria-hidden />
+          )}
         </TLTool>
 
         <div className="w-px h-[18px] bg-border" />

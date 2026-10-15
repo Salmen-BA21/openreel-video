@@ -112,6 +112,91 @@ export class FFT {
     return result;
   }
 
+  forwardComplex(
+    real: Float32Array,
+    imag: Float32Array,
+  ): { real: Float32Array; imag: Float32Array } {
+    const n = this.size;
+    const outReal = new Float32Array(n);
+    const outImag = new Float32Array(n);
+
+    for (let i = 0; i < n; i++) {
+      outReal[this.reverseTable[i]] = real[i];
+      outImag[this.reverseTable[i]] = imag[i];
+    }
+
+    for (let len = 2; len <= n; len *= 2) {
+      const halfLen = len / 2;
+      const tableStep = n / len;
+
+      for (let i = 0; i < n; i += len) {
+        for (let j = 0; j < halfLen; j++) {
+          const tIdx = j * tableStep;
+          const cos = this.cosTable[tIdx];
+          const sin = this.sinTable[tIdx];
+
+          const evenIdx = i + j;
+          const oddIdx = i + j + halfLen;
+
+          const tReal = outReal[oddIdx] * cos - outImag[oddIdx] * sin;
+          const tImag = outReal[oddIdx] * sin + outImag[oddIdx] * cos;
+
+          outReal[oddIdx] = outReal[evenIdx] - tReal;
+          outImag[oddIdx] = outImag[evenIdx] - tImag;
+          outReal[evenIdx] = outReal[evenIdx] + tReal;
+          outImag[evenIdx] = outImag[evenIdx] + tImag;
+        }
+      }
+    }
+
+    return { real: outReal, imag: outImag };
+  }
+
+  inverseComplex(
+    real: Float32Array,
+    imag: Float32Array,
+  ): { real: Float32Array; imag: Float32Array } {
+    const n = this.size;
+    const outReal = new Float32Array(n);
+    const outImag = new Float32Array(n);
+
+    for (let i = 0; i < n; i++) {
+      outReal[this.reverseTable[i]] = real[i];
+      outImag[this.reverseTable[i]] = -imag[i];
+    }
+
+    for (let len = 2; len <= n; len *= 2) {
+      const halfLen = len / 2;
+      const tableStep = n / len;
+
+      for (let i = 0; i < n; i += len) {
+        for (let j = 0; j < halfLen; j++) {
+          const tIdx = j * tableStep;
+          const cos = this.cosTable[tIdx];
+          const sin = this.sinTable[tIdx];
+
+          const evenIdx = i + j;
+          const oddIdx = i + j + halfLen;
+
+          const tReal = outReal[oddIdx] * cos - outImag[oddIdx] * sin;
+          const tImag = outReal[oddIdx] * sin + outImag[oddIdx] * cos;
+
+          outReal[oddIdx] = outReal[evenIdx] - tReal;
+          outImag[oddIdx] = outImag[evenIdx] - tImag;
+          outReal[evenIdx] = outReal[evenIdx] + tReal;
+          outImag[evenIdx] = outImag[evenIdx] + tImag;
+        }
+      }
+    }
+
+    for (let i = 0; i < n; i++) {
+      outReal[i] /= n;
+      outImag[i] = -outImag[i] / n;
+    }
+
+    return { real: outReal, imag: outImag };
+  }
+
   getMagnitude(real: Float32Array, imag: Float32Array): Float32Array {
     const halfSize = this.size / 2;
     const magnitude = new Float32Array(halfSize);
